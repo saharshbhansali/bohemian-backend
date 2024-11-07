@@ -63,9 +63,13 @@ def test_vote_on_poll():
     )
     poll_id = response.json()["id"]
     option_id = response.json()["options"][0]["id"]
-    response = client.post(f"/polls/{poll_id}/vote", json={"option_id": option_id})
-    assert response.status_code == 200
-    assert response.json()["message"] == "Vote cast successfully"
+
+    vote_response = client.post(
+        f"/polls/{poll_id}/vote",
+        json={"option_id": option_id},
+    )
+    assert vote_response.status_code == 200
+    assert vote_response.json() == {"message": "Vote cast successfully"}
 
 
 def test_delete_poll():

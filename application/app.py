@@ -21,6 +21,11 @@ class OptionCreate(BaseModel):
     text: str
 
 
+class OptionResponse(BaseModel):
+    id: int
+    text: str
+
+
 class PollCreate(BaseModel):
     question: str
     options: List[OptionCreate]
@@ -29,7 +34,7 @@ class PollCreate(BaseModel):
 class PollResponse(BaseModel):
     id: int
     question: str
-    options: List[OptionCreate]
+    options: List[OptionResponse]
 
 
 class VoteCreate(BaseModel):
@@ -44,11 +49,15 @@ def create_poll(poll: PollCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_poll)
 
+    options = []
     for option in poll.options:
         db_option = Option(text=option.text, poll_id=db_poll.id)
         db.add(db_option)
+        db.commit()
+        db.refresh(db_option)
+        options.append(db_option)
 
-    db.commit()
+    db_poll.options = options
     return db_poll
 
 
