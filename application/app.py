@@ -1,11 +1,34 @@
-from fastapi import FastAPI, HTTPException, Depends
+import logging
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List
 from .models import Poll, Option, Vote, OTP, SessionLocal
 from .utils import generate_otp
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Request: {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"Response: {response.status_code}")
+    return response
 
 
 # Dependency to get the DB session
@@ -82,8 +105,8 @@ def get_poll(poll_id: int, db: Session = Depends(get_db)):
 def vote_on_poll(
     poll_id: int,
     vote: VoteCreate,
-    username: str,
-    otp: str,
+    username: str = Query(...),
+    otp: str = Query(...),
     db: Session = Depends(get_db),
 ):
     # Validate OTP
@@ -106,8 +129,8 @@ def vote_on_poll(
     db.commit()
 
     # Delete OTP after use
-    # db.delete(otp_record)
-    # db.commit()
+    db.delete(otp_record)
+    db.commit()
 
     return {"message": "Vote cast successfully"}
 
@@ -125,8 +148,10 @@ def delete_poll(poll_id: int, db: Session = Depends(get_db)):
 # OTP Generation Endpoint
 @app.post("/generate_otps")
 def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
-    # username_list = usernames.usernames.splitlines()
-
+    # Delete existing OTPs for the specified usernames
+    db.query(OTP).filter(OTP.username.in_(usernames.usernames)).delete(synchronize_session=False)
+    
+    # Generate new OTPs
     for username in usernames.usernames:
         otp = generate_otp()
         db_otp = OTP(username=username, otp=otp)
