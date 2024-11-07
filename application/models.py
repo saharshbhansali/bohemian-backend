@@ -35,4 +35,12 @@ class Vote(Base):
     option = relationship("Option")
 
 
+class OTP(Base):
+    __tablename__ = "otps"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True)
+    otp = Column(String, index=True)
+
+
 Base.metadata.create_all(bind=engine)

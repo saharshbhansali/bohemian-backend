@@ -2,7 +2,8 @@ from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List
-from .models import Poll, Option, Vote, SessionLocal
+from .models import Poll, Option, Vote, OTP, SessionLocal
+from .utils import generate_otp
 
 app = FastAPI()
 
@@ -41,7 +42,13 @@ class VoteCreate(BaseModel):
     option_id: int
 
 
-# CRUD Endpoints
+class Usernames(BaseModel):
+    # usernames: str
+    usernames: List[str]
+
+
+## CRUD Endpoints
+# Create Poll Endpoint
 @app.post("/polls/", response_model=PollResponse)
 def create_poll(poll: PollCreate, db: Session = Depends(get_db)):
     db_poll = Poll(question=poll.question)
@@ -61,6 +68,7 @@ def create_poll(poll: PollCreate, db: Session = Depends(get_db)):
     return db_poll
 
 
+# Get Polls Endpoint
 @app.get("/polls/{poll_id}", response_model=PollResponse)
 def get_poll(poll_id: int, db: Session = Depends(get_db)):
     poll = db.query(Poll).filter(Poll.id == poll_id).first()
@@ -69,8 +77,21 @@ def get_poll(poll_id: int, db: Session = Depends(get_db)):
     return poll
 
 
+# Voting Endpoint
 @app.post("/polls/{poll_id}/vote", response_model=dict)
-def vote_on_poll(poll_id: int, vote: VoteCreate, db: Session = Depends(get_db)):
+def vote_on_poll(
+    poll_id: int,
+    vote: VoteCreate,
+    username: str,
+    otp: str,
+    db: Session = Depends(get_db),
+):
+    # Validate OTP
+    otp_record = db.query(OTP).filter(OTP.username == username, OTP.otp == otp).first()
+    if otp_record is None:
+        raise HTTPException(status_code=401, detail="Invalid OTP")
+
+    # Validate option
     option = (
         db.query(Option)
         .filter(Option.id == vote.option_id, Option.poll_id == poll_id)
@@ -78,9 +99,16 @@ def vote_on_poll(poll_id: int, vote: VoteCreate, db: Session = Depends(get_db)):
     )
     if option is None:
         raise HTTPException(status_code=404, detail="Option not found for this poll")
+
+    # Cast vote
     db_vote = Vote(option_id=option.id)
     db.add(db_vote)
     db.commit()
+
+    # Delete OTP after use
+    # db.delete(otp_record)
+    # db.commit()
+
     return {"message": "Vote cast successfully"}
 
 
@@ -92,3 +120,16 @@ def delete_poll(poll_id: int, db: Session = Depends(get_db)):
     db.delete(poll)
     db.commit()
     return {"message": "Poll deleted successfully"}
+
+
+# OTP Generation Endpoint
+@app.post("/generate_otps")
+def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
+    # username_list = usernames.usernames.splitlines()
+
+    for username in usernames.usernames:
+        otp = generate_otp()
+        db_otp = OTP(username=username, otp=otp)
+        db.add(db_otp)
+    db.commit()
+    return {"message": "OTPs generated successfully"}
