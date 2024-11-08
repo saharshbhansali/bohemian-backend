@@ -35,7 +35,6 @@ class OTP(Base):
     __tablename__ = "otps"
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, index=True)
     otp = Column(String, index=True)
 
 

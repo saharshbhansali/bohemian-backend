@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from application.app import app, get_db
 from application.models import Base, Election, Candidate, OTP
+from application.utils import generate_otp, hash_email_otp
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(
@@ -27,9 +28,9 @@ client = TestClient(app)
 
 
 def test_generate_otps():
-    response = client.post("/generate_otps", json={"usernames": ["user1", "user2"]})
+    response = client.post("/generate_otps", json={"usernames": ["user1@example.com", "user2@example.com"]})
     assert response.status_code == 200
-    assert response.json() == {"message": "OTPs generated successfully"}
+    assert response.json() == {"message": "OTPs generated and stored successfully"}
 
 
 def test_create_election():
@@ -50,42 +51,46 @@ def test_create_election():
 
 
 def test_vote_in_election():
-    # Generate OTP for user
-    # client.post("/generate_otps", json={"usernames": ["user1"]})
-
     test_create_election()
 
     db = TestingSessionLocal()
 
-    otp = db.query(OTP).filter(OTP.username == "user1").first().otp
-    db.close()
+    otp = generate_otp()
+    hashed_otp = hash_email_otp("user1@example.com", otp)
+    db_otp = OTP(otp=hashed_otp)
+    db.add(db_otp)
+    db.commit()
 
     # Cast vote
     response = client.post(
         "/elections/1/vote",
-        params={"username": "user1", "otp": otp},
+        params={"validation_token": hashed_otp},
         json={"option_id": 1},
     )
 
     assert response.status_code == 200
     assert response.json() == {"message": "Vote cast successfully"}
 
-    otp = db.query(OTP).filter(OTP.username == "user2").first().otp
-    db.close()
+    otp = generate_otp()
+    hashed_otp = hash_email_otp("user2@example.com", otp)
+    db_otp = OTP(otp=hashed_otp)
+    db.add(db_otp)
+    db.commit()
 
     # Cast vote
     response = client.post(
         "/elections/1/vote",
-        params={"username": "user2", "otp": otp},
+        params={"validation_token": hashed_otp},
         json={"option_id": 2},
     )
 
     assert response.status_code == 200
     assert response.json() == {"message": "Vote cast successfully"}
 
+    db.close()
+
 
 def test_get_election_results():
-
     test_vote_in_election()
 
     response = client.get("/elections/1/results")

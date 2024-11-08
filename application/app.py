@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List
 from .models import Election, Candidate, Vote, OTP, SessionLocal
-from .utils import generate_otp
+from .utils import generate_otp, hash_email_otp
+import csv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -74,18 +75,23 @@ class ElectionResponse(BaseModel):
 # OTP Generation Endpoint
 @app.post("/generate_otps")
 def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
-    # Delete existing OTPs for the specified usernames
-    db.query(OTP).filter(OTP.username.in_(usernames.usernames)).delete(
-        synchronize_session=False
-    )
+    # Delete existing OTPs
+    db.query(OTP).delete(synchronize_session=False)
 
-    # Generate new OTPs
-    for username in usernames.usernames:
-        otp = generate_otp()
-        db_otp = OTP(username=username, otp=otp)
-        db.add(db_otp)
+    # Generate new OTPs and store in CSV
+    with open('identities.csv', mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['email', 'otp'])
+
+        for username in usernames.usernames:
+            otp = generate_otp()
+            hashed_value = hash_email_otp(username, otp)
+            db_otp = OTP(otp=hashed_value)
+            db.add(db_otp)
+            writer.writerow([username, otp])
+
     db.commit()
-    return {"message": "OTPs generated successfully"}
+    return {"message": "OTPs generated and stored successfully"}
 
 
 ## CRUD Endpoints
@@ -114,12 +120,11 @@ def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
 def vote_in_election(
     election_id: int,
     vote: VoteCreate,
-    username: str = Query(...),
-    otp: str = Query(...),
+    validation_token: str = Query(...),
     db: Session = Depends(get_db),
 ):
     # Validate OTP
-    otp_record = db.query(OTP).filter(OTP.username == username, OTP.otp == otp).first()
+    otp_record = db.query(OTP).filter(OTP.otp == validation_token).first()
     if otp_record is None:
         raise HTTPException(status_code=401, detail="Invalid OTP")
     # Validate candidate
