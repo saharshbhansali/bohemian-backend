@@ -64,7 +64,7 @@ def test_vote_in_election():
     # Cast vote
     response = client.post(
         "/elections/1/vote",
-        params={"validation_token": hashed_otp},
+        headers={"Authorization": f"Bearer {hashed_otp}"},
         json={"option_id": 1},
     )
 
@@ -80,7 +80,7 @@ def test_vote_in_election():
     # Cast vote
     response = client.post(
         "/elections/1/vote",
-        params={"validation_token": hashed_otp},
+        headers={"Authorization": f"Bearer {hashed_otp}"},
         json={"option_id": 2},
     )
 

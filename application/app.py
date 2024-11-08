@@ -7,6 +7,7 @@ from typing import List
 from .models import Election, Candidate, Vote, OTP, SessionLocal
 from .utils import generate_otp, hash_email_otp
 import csv
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -72,6 +73,8 @@ class ElectionResponse(BaseModel):
     candidates: List[CandidateResponse]
 
 
+security = HTTPBearer()
+
 # OTP Generation Endpoint
 @app.post("/generate_otps")
 def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
@@ -120,9 +123,10 @@ def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
 def vote_in_election(
     election_id: int,
     vote: VoteCreate,
-    validation_token: str = Query(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
+    validation_token = credentials.credentials
     # Validate OTP
     otp_record = db.query(OTP).filter(OTP.otp == validation_token).first()
     if otp_record is None:
