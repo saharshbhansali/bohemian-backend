@@ -2,37 +2,33 @@ from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 
-DATABASE_URL = "sqlite:///./polls.db"
+DATABASE_URL = "sqlite:///./elections.db"
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-class Poll(Base):
-    __tablename__ = "polls"
-
+class Election(Base):
+    __tablename__ = "elections"
     id = Column(Integer, primary_key=True, index=True)
-    question = Column(String, index=True)
-    options = relationship(
-        "Option", back_populates="poll", cascade="all, delete-orphan"
-    )
+    title = Column(String, index=True)
+    candidates = relationship("Candidate", back_populates="election")
 
 
-class Option(Base):
-    __tablename__ = "options"
-
+class Candidate(Base):
+    __tablename__ = "candidates"
     id = Column(Integer, primary_key=True, index=True)
-    text = Column(String, index=True)
-    poll_id = Column(Integer, ForeignKey("polls.id"))
-    poll = relationship("Poll", back_populates="options")
+    name = Column(String, index=True)
+    election_id = Column(Integer, ForeignKey("elections.id"))
+    votes = Column(Integer, default=0)
+    election = relationship("Election", back_populates="candidates")
 
 
 class Vote(Base):
     __tablename__ = "votes"
-
     id = Column(Integer, primary_key=True, index=True)
-    option_id = Column(Integer, ForeignKey("options.id"))
-    option = relationship("Option")
+    candidate_id = Column(Integer, ForeignKey("candidates.id"))
+    candidate = relationship("Candidate")
 
 
 class OTP(Base):

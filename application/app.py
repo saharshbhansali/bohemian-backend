@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List
-from .models import Poll, Option, Vote, OTP, SessionLocal
+from .models import Election, Candidate, Vote, OTP, SessionLocal
 from .utils import generate_otp
 
 # Configure logging
@@ -41,26 +41,6 @@ def get_db():
 
 
 # Pydantic Models
-class OptionCreate(BaseModel):
-    text: str
-
-
-class OptionResponse(BaseModel):
-    id: int
-    text: str
-
-
-class PollCreate(BaseModel):
-    question: str
-    options: List[OptionCreate]
-
-
-class PollResponse(BaseModel):
-    id: int
-    question: str
-    options: List[OptionResponse]
-
-
 class VoteCreate(BaseModel):
     option_id: int
 
@@ -70,40 +50,69 @@ class Usernames(BaseModel):
     usernames: List[str]
 
 
-## CRUD Endpoints
-# Create Poll Endpoint
-@app.post("/polls/", response_model=PollResponse)
-def create_poll(poll: PollCreate, db: Session = Depends(get_db)):
-    db_poll = Poll(question=poll.question)
-    db.add(db_poll)
+class CandidateCreate(BaseModel):
+    name: str
+
+
+class CandidateResponse(BaseModel):
+    id: int
+    name: str
+    votes: int
+
+
+class ElectionCreate(BaseModel):
+    title: str
+    candidates: List[CandidateCreate]
+
+
+class ElectionResponse(BaseModel):
+    id: int
+    title: str
+    candidates: List[CandidateResponse]
+
+
+# OTP Generation Endpoint
+@app.post("/generate_otps")
+def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
+    # Delete existing OTPs for the specified usernames
+    db.query(OTP).filter(OTP.username.in_(usernames.usernames)).delete(
+        synchronize_session=False
+    )
+
+    # Generate new OTPs
+    for username in usernames.usernames:
+        otp = generate_otp()
+        db_otp = OTP(username=username, otp=otp)
+        db.add(db_otp)
     db.commit()
-    db.refresh(db_poll)
+    return {"message": "OTPs generated successfully"}
 
-    options = []
-    for option in poll.options:
-        db_option = Option(text=option.text, poll_id=db_poll.id)
-        db.add(db_option)
+
+## CRUD Endpoints
+
+
+# Create election
+@app.post("/elections/", response_model=ElectionResponse)
+def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
+    db_election = Election(title=election.title)
+    db.add(db_election)
+    db.commit()
+    db.refresh(db_election)
+    candidates = []
+    for candidate in election.candidates:
+        db_candidate = Candidate(name=candidate.name, election_id=db_election.id)
+        db.add(db_candidate)
         db.commit()
-        db.refresh(db_option)
-        options.append(db_option)
-
-    db_poll.options = options
-    return db_poll
-
-
-# Get Polls Endpoint
-@app.get("/polls/{poll_id}", response_model=PollResponse)
-def get_poll(poll_id: int, db: Session = Depends(get_db)):
-    poll = db.query(Poll).filter(Poll.id == poll_id).first()
-    if poll is None:
-        raise HTTPException(status_code=404, detail="Poll not found")
-    return poll
+        db.refresh(db_candidate)
+        candidates.append(db_candidate)
+    db_election.candidates = candidates
+    return db_election
 
 
-# Voting Endpoint
-@app.post("/polls/{poll_id}/vote", response_model=dict)
-def vote_on_poll(
-    poll_id: int,
+# Vote in an election
+@app.post("/elections/{election_id}/vote", response_model=dict)
+def vote_in_election(
+    election_id: int,
     vote: VoteCreate,
     username: str = Query(...),
     otp: str = Query(...),
@@ -113,48 +122,52 @@ def vote_on_poll(
     otp_record = db.query(OTP).filter(OTP.username == username, OTP.otp == otp).first()
     if otp_record is None:
         raise HTTPException(status_code=401, detail="Invalid OTP")
-
-    # Validate option
-    option = (
-        db.query(Option)
-        .filter(Option.id == vote.option_id, Option.poll_id == poll_id)
+    # Validate candidate
+    candidate = (
+        db.query(Candidate)
+        .filter(Candidate.id == vote.option_id, Candidate.election_id == election_id)
         .first()
     )
-    if option is None:
-        raise HTTPException(status_code=404, detail="Option not found for this poll")
-
+    if candidate is None:
+        raise HTTPException(
+            status_code=404, detail="Candidate not found for this election"
+        )
     # Cast vote
-    db_vote = Vote(option_id=option.id)
+    db_vote = Vote(candidate_id=candidate.id)
     db.add(db_vote)
     db.commit()
-
     # Delete OTP after use
     db.delete(otp_record)
     db.commit()
-
     return {"message": "Vote cast successfully"}
 
 
-@app.delete("/polls/{poll_id}", response_model=dict)
-def delete_poll(poll_id: int, db: Session = Depends(get_db)):
-    poll = db.query(Poll).filter(Poll.id == poll_id).first()
-    if poll is None:
-        raise HTTPException(status_code=404, detail="Poll not found")
-    db.delete(poll)
-    db.commit()
-    return {"message": "Poll deleted successfully"}
+# Get election results
+@app.get("/elections/{election_id}/results", response_model=List[CandidateResponse])
+def get_election_results(election_id: int, db: Session = Depends(get_db)):
+    candidates = db.query(Candidate).filter(Candidate.election_id == election_id).all()
+    if not candidates:
+        raise HTTPException(status_code=404, detail="Election not found")
 
+    # Calculate votes for each candidate
+    candidate_votes = {candidate.id: 0 for candidate in candidates}
+    votes = (
+        db.query(Vote)
+        .join(Candidate)
+        .filter(Candidate.election_id == election_id)
+        .all()
+    )
+    for vote in votes:
+        candidate_votes[vote.candidate_id] += 1
 
-# OTP Generation Endpoint
-@app.post("/generate_otps")
-def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
-    # Delete existing OTPs for the specified usernames
-    db.query(OTP).filter(OTP.username.in_(usernames.usernames)).delete(synchronize_session=False)
-    
-    # Generate new OTPs
-    for username in usernames.usernames:
-        otp = generate_otp()
-        db_otp = OTP(username=username, otp=otp)
-        db.add(db_otp)
-    db.commit()
-    return {"message": "OTPs generated successfully"}
+    # Create response with vote counts
+    results = [
+        CandidateResponse(
+            id=candidate.id, name=candidate.name, votes=candidate_votes[candidate.id]
+        )
+        for candidate in candidates
+    ]
+
+    # Sort candidates by votes in descending order
+    results.sort(key=lambda candidate: candidate.votes, reverse=True)
+    return results
