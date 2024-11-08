@@ -28,7 +28,9 @@ client = TestClient(app)
 
 
 def test_generate_otps():
-    response = client.post("/generate_otps", json={"usernames": ["user1@example.com", "user2@example.com"]})
+    response = client.post(
+        "/generate_otps", json={"usernames": ["user1@example.com", "user2@example.com"]}
+    )
     assert response.status_code == 200
     assert response.json() == {"message": "OTPs generated and stored successfully"}
 

@@ -5,7 +5,15 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    DATETIME,
+    ForeignKey,
+    create_engine,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 

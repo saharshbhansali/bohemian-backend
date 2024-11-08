@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List
 from .models import Election, Candidate, Vote, OTP, SessionLocal
-from .utils import generate_otp, hash_email_otp, send_email, handle_otp_storage_and_notification
+from .utils import (
+    generate_otp,
+    hash_email_otp,
+    send_email,
+    handle_otp_storage_and_notification,
+)
 import csv
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -78,6 +83,7 @@ security = HTTPBearer()
 SEND_EMAILS = False  # Set to True to enable email sending
 WRITE_TO_CSV = True  # Set to True to enable writing to CSV
 
+
 # OTP Generation Endpoint
 @app.post("/generate_otps")
 def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
@@ -94,7 +100,9 @@ def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
 
     db.commit()
 
-    handle_otp_storage_and_notification(usernames.usernames, otps, send_emails=SEND_EMAILS, write_to_csv=WRITE_TO_CSV)
+    handle_otp_storage_and_notification(
+        usernames.usernames, otps, send_emails=SEND_EMAILS, write_to_csv=WRITE_TO_CSV
+    )
 
     return {"message": "OTPs generated and stored successfully"}
 

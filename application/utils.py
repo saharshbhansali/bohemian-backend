@@ -10,13 +10,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 def generate_otp(length=21):
     characters = string.ascii_letters + string.digits
     otp = "".join(random.choice(characters) for i in range(length))
     return otp
 
+
 def hash_email_otp(email, otp):
     return hashlib.sha256((email + otp).encode()).hexdigest()
+
 
 def send_email(recipient, subject, body):
     sender_email = os.getenv("SENDER_EMAIL")
@@ -43,11 +46,14 @@ def send_email(recipient, subject, body):
         print(f"Failed to send email: {e}")
         return False
 
-def handle_otp_storage_and_notification(usernames, otps, send_emails=False, write_to_csv=False):
+
+def handle_otp_storage_and_notification(
+    usernames, otps, send_emails=False, write_to_csv=False
+):
     if write_to_csv:
-        with open('identities.csv', mode='w', newline='') as file:
+        with open("identities.csv", mode="w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(['email', 'otp'])
+            writer.writerow(["email", "otp"])
             for username, otp in zip(usernames, otps):
                 writer.writerow([username, otp])
                 if send_emails:
