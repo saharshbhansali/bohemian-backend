@@ -164,3 +164,8 @@ cython_debug/
 # Database files 
 app/*.db
 *.db
+identities.csv
+
+# VSCode settings
+# .vscode/
+.vscode/settings.json
