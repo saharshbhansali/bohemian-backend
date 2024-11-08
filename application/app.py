@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List
-from .models import Election, Candidate, Vote, OTP, SessionLocal
+from .models import Election, Candidate, Vote, OTP, ElectionWinner, SessionLocal
 from .utils import (
     generate_otp,
     hash_email_otp,
@@ -13,6 +13,7 @@ from .utils import (
 )
 import csv
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from datetime import datetime, UTC as datetime_UTC
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -70,12 +71,19 @@ class CandidateResponse(BaseModel):
 class ElectionCreate(BaseModel):
     title: str
     candidates: List[CandidateCreate]
+    end_time: datetime
 
 
 class ElectionResponse(BaseModel):
     id: int
     title: str
     candidates: List[CandidateResponse]
+
+
+class ElectionWinnerResponse(BaseModel):
+    id: int
+    name: str
+    votes: int
 
 
 security = HTTPBearer()
@@ -113,7 +121,7 @@ def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
 # Create election
 @app.post("/elections/", response_model=ElectionResponse)
 def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
-    db_election = Election(title=election.title)
+    db_election = Election(title=election.title, end_time=election.end_time)
     db.add(db_election)
     db.commit()
     db.refresh(db_election)
@@ -161,12 +169,22 @@ def vote_in_election(
     return {"message": "Vote cast successfully"}
 
 
+class ElectionResultsResponse(BaseModel):
+    results: List[CandidateResponse]
+    winner: CandidateResponse = None
+
 # Get election results
-@app.get("/elections/{election_id}/results", response_model=List[CandidateResponse])
+@app.get("/elections/{election_id}/results", response_model=ElectionResultsResponse)
 def get_election_results(election_id: int, db: Session = Depends(get_db)):
+    election = db.query(Election).filter(Election.id == election_id).first()
+    if not election:
+        raise HTTPException(status_code=404, detail="Election not found")
+
     candidates = db.query(Candidate).filter(Candidate.election_id == election_id).all()
     if not candidates:
-        raise HTTPException(status_code=404, detail="Election not found")
+        raise HTTPException(
+            status_code=404, detail="No candidates found for this election"
+        )
 
     # Calculate votes for each candidate
     candidate_votes = {candidate.id: 0 for candidate in candidates}
@@ -189,4 +207,16 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
 
     # Sort candidates by votes in descending order
     results.sort(key=lambda candidate: candidate.votes, reverse=True)
-    return results
+
+    # Check if the election has expired
+    if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
+        tzinfo=datetime_UTC
+    ):
+        winner = results[0]
+        # Store the winner in the ElectionWinner table
+        db_winner = ElectionWinner(election_id=election.id, winner_id=winner.id)
+        db.add(db_winner)
+        db.commit()
+        return ElectionResultsResponse(results=results, winner=winner)
+
+    return ElectionResultsResponse(results=results)

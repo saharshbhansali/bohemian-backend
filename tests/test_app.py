@@ -4,6 +4,8 @@ from sqlalchemy.orm import sessionmaker
 from application.app import app, get_db
 from application.models import Base, Election, Candidate, OTP
 from application.utils import generate_otp, hash_email_otp
+from datetime import datetime, timedelta, UTC as datetime_UTC
+from unittest.mock import patch
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(
@@ -42,6 +44,7 @@ def test_create_election():
         json={
             "title": "Test Election",
             "candidates": [{"name": "Candidate 1"}, {"name": "Candidate 2"}],
+            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
         },
     )
     assert response.status_code == 200
@@ -92,12 +95,19 @@ def test_vote_in_election():
     db.close()
 
 
-def test_get_election_results():
+@patch("application.app.datetime")
+def test_get_election_results(mock_datetime):
     test_vote_in_election()
+
+    # Mock current time to simulate election expiry
+    mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
 
     response = client.get("/elections/1/results")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 2
-    assert data[0]["name"] == "Candidate 1"
-    assert data[1]["name"] == "Candidate 2"
+    assert "results" in data
+    assert "winner" in data
+    assert len(data["results"]) == 2
+    assert data["results"][0]["name"] == "Candidate 1"
+    assert data["results"][1]["name"] == "Candidate 2"
+    assert data["winner"]["name"] == "Candidate 1"
