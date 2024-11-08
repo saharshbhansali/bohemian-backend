@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List
 from .models import Election, Candidate, Vote, OTP, SessionLocal
-from .utils import generate_otp, hash_email_otp
+from .utils import generate_otp, hash_email_otp, send_email, handle_otp_storage_and_notification
 import csv
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -75,25 +75,27 @@ class ElectionResponse(BaseModel):
 
 security = HTTPBearer()
 
+SEND_EMAILS = False  # Set to True to enable email sending
+WRITE_TO_CSV = True  # Set to True to enable writing to CSV
+
 # OTP Generation Endpoint
 @app.post("/generate_otps")
 def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
     # Delete existing OTPs
     db.query(OTP).delete(synchronize_session=False)
 
-    # Generate new OTPs and store in CSV
-    with open('identities.csv', mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['email', 'otp'])
-
-        for username in usernames.usernames:
-            otp = generate_otp()
-            hashed_value = hash_email_otp(username, otp)
-            db_otp = OTP(otp=hashed_value)
-            db.add(db_otp)
-            writer.writerow([username, otp])
+    otps = []
+    for username in usernames.usernames:
+        otp = generate_otp()
+        hashed_value = hash_email_otp(username, otp)
+        db_otp = OTP(otp=hashed_value)
+        db.add(db_otp)
+        otps.append(otp)
 
     db.commit()
+
+    handle_otp_storage_and_notification(usernames.usernames, otps, send_emails=SEND_EMAILS, write_to_csv=WRITE_TO_CSV)
+
     return {"message": "OTPs generated and stored successfully"}
 
 
