@@ -6,7 +6,6 @@ from sqlalchemy import (
     String,
     BLOB,
     DateTime,
-    DATETIME,
     ForeignKey,
     create_engine,
 )
@@ -38,14 +37,14 @@ class Candidate(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     election_id = Column(Integer, ForeignKey("elections.id"))
-    votes = Column(Integer, default=0)
+    votes = Column(Integer, default=0, nullable=False)
     election = relationship("Election", back_populates="candidates")
 
 
 class Vote(Base):
     __tablename__ = "votes"
     id = Column(Integer, primary_key=True, index=True)
-    validation_token = Column(String, index=True)
+    validation_token = Column(String, index=True, nullable=False)
     election_id = Column(Integer, ForeignKey("elections.id"))
     candidate_id = Column(Integer, ForeignKey("candidates.id"))
     election = relationship("Election")
@@ -55,9 +54,9 @@ class Vote(Base):
 class AlternativeVote(Base):
     __tablename__ = "alternative_votes"
     id = Column(Integer, primary_key=True, index=True)
-    validation_token = Column(String, index=True)
+    validation_token = Column(String, index=True, nullable=False)
     election_id = Column(Integer, ForeignKey("elections.id"))
-    vote_string = Column(String, index=True)
+    vote_string = Column(String, index=True, default="")
     vote = Column(BLOB, index=True)
     election = relationship("Election")
 
