@@ -95,9 +95,10 @@ def test_vote_in_election() -> int:
     election_id = response.json()["id"]
     candidates = response.json()["candidates"]
 
-    cast_vote("user1@example.com", {"option_id": candidates[0]["id"]}, election_id)
-    cast_vote("user2@example.com", {"option_id": candidates[1]["id"]}, election_id)
-    cast_vote("user3@example.com", {"option_id": candidates[0]["id"]}, election_id)
+    cast_vote("user1@example.com", {"vote": candidates[0]["id"]}, election_id)
+    cast_vote("user2@example.com", {"vote": candidates[1]["id"]}, election_id)
+    cast_vote("user3@example.com", {"vote": candidates[0]["id"]}, election_id)
+    # cast_vote("user3@example.com", {"vote": "{'c1':1, 'c2':2, 'c3':3, 'c4':4}"}, election_id)
 
     return election_id
 
@@ -126,8 +127,8 @@ def test_get_election_results_draw(mock_datetime):
     election_id = response.json()["id"]
     candidates = response.json()["candidates"]
 
-    cast_vote("user1@example.com", {"option_id": candidates[0]["id"]}, election_id)
-    cast_vote("user2@example.com", {"option_id": candidates[1]["id"]}, election_id)
+    cast_vote("user1@example.com", {"vote": candidates[0]["id"]}, election_id)
+    cast_vote("user2@example.com", {"vote": candidates[1]["id"]}, election_id)
 
     # Mock current time to simulate election expiry
     mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)

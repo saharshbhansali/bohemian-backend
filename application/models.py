@@ -4,6 +4,7 @@ from sqlalchemy import (
     Column,
     Integer,
     String,
+    BLOB,
     DateTime,
     DATETIME,
     ForeignKey,
@@ -23,7 +24,6 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-
 class Election(Base):
     __tablename__ = "elections"
     id = Column(Integer, primary_key=True, index=True)
@@ -31,7 +31,6 @@ class Election(Base):
     candidates = relationship("Candidate", back_populates="election")
     end_time = Column(DateTime, nullable=True)
     voting_system = Column(String, default="traditional")
-
 
 
 class Candidate(Base):
@@ -47,8 +46,18 @@ class Vote(Base):
     __tablename__ = "votes"
     id = Column(Integer, primary_key=True, index=True)
     validation_token = Column(String, index=True)
+    election_id = Column(Integer, ForeignKey("elections.id"))
     candidate_id = Column(Integer, ForeignKey("candidates.id"))
+    election = relationship("Election")
     candidate = relationship("Candidate")
+
+
+class AlternativeVote(Base):
+    __tablename__ = "alternative_votes"
+    id = Column(Integer, primary_key=True, index=True)
+    election_id = Column(Integer, ForeignKey("elections.id"))
+    vote = Column(BLOB, index=True)
+    election = relationship("Election")
 
 
 class OTP(Base):

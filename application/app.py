@@ -1,10 +1,19 @@
 import logging
+import json
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import List
-from .models import Election, Candidate, Vote, OTP, ElectionWinner, SessionLocal
+from typing import List, Dict
+from .models import (
+    Election,
+    Candidate,
+    Vote,
+    AlternativeVote,
+    OTP,
+    ElectionWinner,
+    SessionLocal,
+)
 from .utils import (
     generate_otp,
     hash_email_otp,
@@ -55,7 +64,11 @@ def get_db():
 
 # Pydantic Models
 class VoteCreate(BaseModel):
-    option_id: int
+    vote: int
+
+
+class AlternativeVoteCreate(BaseModel):
+    vote: str
 
 
 class Usernames(BaseModel):
@@ -150,7 +163,7 @@ def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
 @app.post("/elections/{election_id}/vote", response_model=dict)
 def vote_in_election(
     election_id: int,
-    vote: VoteCreate,
+    vote: VoteCreate | AlternativeVoteCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
@@ -161,35 +174,56 @@ def vote_in_election(
         raise HTTPException(status_code=401, detail="Invalid OTP")
 
     election = db.query(Election).filter(Election.id == election_id).first()
-    if election.voting_system == "traditional":
+
+    if election.voting_system == "traditional" and type(vote.vote) == type(0):
         # Traditional voting logic
         candidate = (
             db.query(Candidate)
-            .filter(
-                Candidate.id == vote.option_id, Candidate.election_id == election_id
-            )
+            .filter(Candidate.id == vote.vote, Candidate.election_id == election_id)
             .first()
         )
         if candidate is None:
             raise HTTPException(
                 status_code=404, detail="Candidate not found for this election"
             )
-        db_vote = Vote(validation_token=validation_token, candidate_id=candidate.id)
+        db_vote = Vote(
+            validation_token=validation_token,
+            election_id=election.id,
+            candidate_id=candidate.id,
+        )
         db.add(db_vote)
-    elif election.voting_system == "ranked_choice":
-        # Ranked choice voting logic
-        # ...implement ranked choice voting logic...
-        pass
-    elif election.voting_system == "score_voting":
-        # Score voting logic
-        # ...implement score voting logic...
-        pass
-    elif election.voting_system == "quadratic_voting":
-        # Quadratic voting logic
-        # ...implement quadratic voting logic...
-        pass
+    elif election.voting_system in (
+        "ranked_choice",
+        "score_voting",
+        "quadratic_voting",
+    ) and type(vote.vote) == type(""):
+        # Parse the JSON data
+        # sample: '{"id1":1, "id2":2, "id3":3, "id4":4}'
+        vote_data = json.loads(vote.vote)
+        for candidate_id in vote_data:
+            if (
+                not db.query(Candidate)
+                .filter(
+                    Candidate.id == candidate_id, Candidate.election_id == election_id
+                )
+                .first()
+            ):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Candidate with ID {candidate_id} not found for this election",
+                )
+
+        db_vote = AlternativeVote(
+            validation_token=validation_token,
+            election_id=election.id,
+            vote=vote.vote,
+        )
+        db.add(db_vote)
     else:
-        raise HTTPException(status_code=400, detail="Invalid voting system")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid voting system and/or vote type for this election",
+        )
 
     db.commit()
     db.delete(otp_record)
