@@ -216,6 +216,7 @@ def vote_in_election(
         db_vote = AlternativeVote(
             validation_token=validation_token,
             election_id=election.id,
+            # vote=str.encode(vote.vote),
             vote=vote.vote,
         )
         db.add(db_vote)

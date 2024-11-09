@@ -55,8 +55,10 @@ class Vote(Base):
 class AlternativeVote(Base):
     __tablename__ = "alternative_votes"
     id = Column(Integer, primary_key=True, index=True)
+    validation_token = Column(String, index=True)
     election_id = Column(Integer, ForeignKey("elections.id"))
-    vote = Column(BLOB, index=True)
+    # vote = Column(BLOB, index=True)
+    vote = Column(String, index=True)
     election = relationship("Election")
 
 
