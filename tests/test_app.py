@@ -45,7 +45,7 @@ def override_get_db():
 
 
 @pytest.fixture(scope="function")
-def election_data(client):
+def election_data(request, client):
     election_ids = {}
     election_responses = {}
 
@@ -58,7 +58,7 @@ def election_data(client):
                 "end_time": (
                     datetime.now(datetime_UTC) + timedelta(days=1)
                 ).isoformat(),
-                "candidates": candidates,
+                "candidates": [{"name": candidate} for candidate in candidates],
                 "voter_emails": voter_emails,
             },
         )
@@ -69,37 +69,7 @@ def election_data(client):
         election_ids[election_type] = data["id"]
         election_responses[election_type] = data
 
-    create_election(
-        "traditional",
-        "Test Election",
-        [{"name": "Candidate 1"}, {"name": "Candidate 2"}],
-        ["user1@example.com", "user2@example.com", "user3@example.com"],
-    )
-    create_election(
-        "traditional",
-        "Test Election - Draw",
-        [{"name": "Candidate 1"}, {"name": "Candidate 2"}],
-        ["user1@example.com", "user2@example.com"],
-        draw=True,
-    )
-    create_election(
-        "ranked_choice",
-        "Ranked Choice Election",
-        [{"name": "Candidate 1"}, {"name": "Candidate 2"}, {"name": "Candidate 3"}],
-        ["user1@example.com", "user2@example.com", "user3@example.com"],
-    )
-    create_election(
-        "score_voting",
-        "Score Voting Election",
-        [{"name": "Candidate 1"}, {"name": "Candidate 2"}, {"name": "Candidate 3"}],
-        ["user1@example.com", "user2@example.com", "user3@example.com"],
-    )
-    create_election(
-        "quadratic_voting",
-        "Quadratic Voting Election",
-        [{"name": "Candidate 1"}, {"name": "Candidate 2"}, {"name": "Candidate 3"}],
-        ["user1@example.com", "user2@example.com", "user3@example.com"],
-    )
+    create_election(**request.param)
 
     return election_ids, election_responses
 
@@ -139,6 +109,22 @@ def cast_vote(client, email, vote_data, election_id):
 
 
 @pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "traditional",
+            "title": "Traditional Election",
+            "candidates": ["Candidate 1", "Candidate 2"],
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+            ],
+        },
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
     "email, vote_index, election_type",
     [
         ("user1@example.com", 0, "traditional"),
@@ -155,6 +141,22 @@ def test_vote_in_election(client, election_data, email, vote_index, election_typ
     cast_vote(client, email, vote_data, election_id)
 
 
+@pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "traditional",
+            "title": "Traditional Election",
+            "candidates": ["Candidate 1", "Candidate 2"],
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+            ],
+        },
+    ],
+    indirect=True,
+)
 @patch("application.app.datetime")
 def test_get_election_results(mock_datetime, client, election_data):
     election_ids, election_responses = election_data
@@ -188,6 +190,22 @@ def test_get_election_results(mock_datetime, client, election_data):
     assert data["winner"]["name"] == "Candidate 1"
 
 
+@pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "traditional",
+            "title": "Traditional Election",
+            "candidates": ["Candidate 1", "Candidate 2"],
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+            ],
+            "draw": True,
+        },
+    ],
+    indirect=True,
+)
 @patch("application.app.datetime")
 def test_get_election_results_draw(mock_datetime, client, election_data):
     election_ids, election_responses = election_data
@@ -212,11 +230,33 @@ def test_get_election_results_draw(mock_datetime, client, election_data):
 
 
 @pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "ranked_choice",
+            "title": "Ranked Choice Election",
+            "candidates": ["Candidate 1", "Candidate 2", "Candidate 3"],
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+                "user4@example.com",
+                "user5@example.com",
+                "user6@example.com",
+            ],
+        },
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
     "email, vote_indices, election_type",
     [
         ("user1@example.com", [0, 1, 2], "ranked_choice"),
         ("user2@example.com", [1, 2, 0], "ranked_choice"),
         ("user3@example.com", [2, 0, 1], "ranked_choice"),
+        ("user4@example.com", [0, 1, 2], "ranked_choice"),
+        ("user5@example.com", [1, 2, 0], "ranked_choice"),
+        ("user6@example.com", [2, 0, 1], "ranked_choice"),
     ],
 )
 def test_vote_in_ranked_choice_election(
@@ -227,17 +267,41 @@ def test_vote_in_ranked_choice_election(
     candidates = election_responses[election_type]["candidates"]
 
     vote_data = {
-        str(candidates[i]["id"]): rank + 1 for rank, i in enumerate(vote_indices)
+        str(candidates[i]["id"]): rank + 1
+        for rank, i in enumerate(vote_indices)
+        if i < len(candidates)
     }
     cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
 
 
+@pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "score_voting",
+            "title": "Score Election",
+            "candidates": ["Candidate 1", "Candidate 2", "Candidate 3"],
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+                "user4@example.com",
+                "user5@example.com",
+                "user6@example.com",
+            ],
+        },
+    ],
+    indirect=True,
+)
 @pytest.mark.parametrize(
     "email, vote_indices, election_type",
     [
         ("user1@example.com", [0, 1, 2], "score_voting"),
         ("user2@example.com", [1, 1, 1], "score_voting"),
         ("user3@example.com", [3, 0, 0], "score_voting"),
+        ("user4@example.com", [1, 3, 2], "score_voting"),
+        ("user5@example.com", [1, 1, 1], "score_voting"),
+        ("user6@example.com", [2, 0, 1], "score_voting"),
     ],
 )
 def test_vote_in_score_voting_election(
@@ -256,11 +320,33 @@ def test_vote_in_score_voting_election(
 
 
 @pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "quadratic_voting",
+            "title": "Quadratic Election",
+            "candidates": ["Candidate 1", "Candidate 2", "Candidate 3"],
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+                "user4@example.com",
+                "user5@example.com",
+                "user6@example.com",
+            ],
+        },
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
     "email, vote_indices, election_type",
     [
         ("user1@example.com", [20, 30, 50], "quadratic_voting"),
         ("user2@example.com", [34, 33, 33], "quadratic_voting"),
         ("user3@example.com", [60, 20, 20], "quadratic_voting"),
+        ("user4@example.com", [10, 00, 90], "quadratic_voting"),
+        ("user5@example.com", [40, 35, 25], "quadratic_voting"),
+        ("user6@example.com", [100, 0, 00], "quadratic_voting"),
     ],
 )
 def test_vote_in_quadratic_voting_election(
@@ -270,5 +356,9 @@ def test_vote_in_quadratic_voting_election(
     election_id = election_ids[election_type]
     candidates = election_responses[election_type]["candidates"]
 
-    vote_data = {str(candidates[i]["id"]): vote for i, vote in enumerate(vote_indices)}
+    vote_data = {
+        str(candidates[i]["id"]): vote
+        for i, vote in enumerate(vote_indices)
+        if i < len(candidates)
+    }
     cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
