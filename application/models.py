@@ -1,10 +1,5 @@
 import os
 from dotenv import load_dotenv
-
-load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
 from sqlalchemy import (
     Column,
     Integer,
@@ -16,12 +11,17 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
+from datetime import datetime
+
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-from datetime import datetime
 
 
 class Election(Base):
@@ -30,6 +30,8 @@ class Election(Base):
     title = Column(String, index=True)
     candidates = relationship("Candidate", back_populates="election")
     end_time = Column(DateTime, nullable=True)
+    voting_system = Column(String, default="traditional")
+
 
 
 class Candidate(Base):

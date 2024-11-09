@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from fastapi import Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from application.app import app, get_db
@@ -39,7 +40,7 @@ def get_otp_from_csv(email):
     return None
 
 
-def cast_vote(email, option, election_id):
+def cast_vote(email, vote_data, election_id):
     otp = get_otp_from_csv(email)
     if otp is None:
         raise ValueError(f"OTP for {email} not found in identities.csv")
@@ -50,7 +51,7 @@ def cast_vote(email, option, election_id):
     response = client.post(
         f"/elections/{election_id}/vote",
         headers={"Authorization": f"Bearer {hashed_otp}"},
-        json={"option_id": option},
+        json=vote_data,
     )
 
     assert response.status_code == 200
@@ -68,7 +69,7 @@ def test_generate_otps():
     assert response.json() == {"message": "OTPs generated and stored successfully"}
 
 
-def test_create_election():
+def test_create_election() -> Response:
     test_generate_otps()
     response = client.post(
         "/elections/",
@@ -76,6 +77,7 @@ def test_create_election():
             "title": "Test Election",
             "candidates": [{"name": "Candidate 1"}, {"name": "Candidate 2"}],
             "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "voting_system": "traditional",
         },
     )
     assert response.status_code == 200
@@ -88,14 +90,14 @@ def test_create_election():
     return response
 
 
-def test_vote_in_election():
+def test_vote_in_election() -> int:
     response = test_create_election()
     election_id = response.json()["id"]
     candidates = response.json()["candidates"]
 
-    cast_vote("user1@example.com", candidates[0]["id"], election_id)
-    cast_vote("user2@example.com", candidates[1]["id"], election_id)
-    cast_vote("user3@example.com", candidates[0]["id"], election_id)
+    cast_vote("user1@example.com", {"option_id": candidates[0]["id"]}, election_id)
+    cast_vote("user2@example.com", {"option_id": candidates[1]["id"]}, election_id)
+    cast_vote("user3@example.com", {"option_id": candidates[0]["id"]}, election_id)
 
     return election_id
 
@@ -124,8 +126,8 @@ def test_get_election_results_draw(mock_datetime):
     election_id = response.json()["id"]
     candidates = response.json()["candidates"]
 
-    cast_vote("user1@example.com", candidates[0]["id"], election_id)
-    cast_vote("user2@example.com", candidates[1]["id"], election_id)
+    cast_vote("user1@example.com", {"option_id": candidates[0]["id"]}, election_id)
+    cast_vote("user2@example.com", {"option_id": candidates[1]["id"]}, election_id)
 
     # Mock current time to simulate election expiry
     mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)

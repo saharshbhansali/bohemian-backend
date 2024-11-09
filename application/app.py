@@ -11,9 +11,14 @@ from .utils import (
     send_email,
     handle_otp_storage_and_notification,
 )
-import csv
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, UTC as datetime_UTC
+from .vote_calculation import (
+    calculate_traditional_votes,
+    calculate_ranked_choice_votes,
+    calculate_score_votes,
+    calculate_quadratic_votes,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -72,6 +77,7 @@ class ElectionCreate(BaseModel):
     title: str
     candidates: List[CandidateCreate]
     end_time: datetime
+    voting_system: str
 
 
 class ElectionResponse(BaseModel):
@@ -121,7 +127,11 @@ def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
 # Create election
 @app.post("/elections/", response_model=ElectionResponse)
 def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
-    db_election = Election(title=election.title, end_time=election.end_time)
+    db_election = Election(
+        title=election.title,
+        end_time=election.end_time,
+        voting_system=election.voting_system,
+    )
     db.add(db_election)
     db.commit()
     db.refresh(db_election)
@@ -149,21 +159,39 @@ def vote_in_election(
     otp_record = db.query(OTP).filter(OTP.otp == validation_token).first()
     if otp_record is None:
         raise HTTPException(status_code=401, detail="Invalid OTP")
-    # Validate candidate
-    candidate = (
-        db.query(Candidate)
-        .filter(Candidate.id == vote.option_id, Candidate.election_id == election_id)
-        .first()
-    )
-    if candidate is None:
-        raise HTTPException(
-            status_code=404, detail="Candidate not found for this election"
+
+    election = db.query(Election).filter(Election.id == election_id).first()
+    if election.voting_system == "traditional":
+        # Traditional voting logic
+        candidate = (
+            db.query(Candidate)
+            .filter(
+                Candidate.id == vote.option_id, Candidate.election_id == election_id
+            )
+            .first()
         )
-    # Cast vote
-    db_vote = Vote(validation_token=validation_token, candidate_id=candidate.id)
-    db.add(db_vote)
+        if candidate is None:
+            raise HTTPException(
+                status_code=404, detail="Candidate not found for this election"
+            )
+        db_vote = Vote(validation_token=validation_token, candidate_id=candidate.id)
+        db.add(db_vote)
+    elif election.voting_system == "ranked_choice":
+        # Ranked choice voting logic
+        # ...implement ranked choice voting logic...
+        pass
+    elif election.voting_system == "score_voting":
+        # Score voting logic
+        # ...implement score voting logic...
+        pass
+    elif election.voting_system == "quadratic_voting":
+        # Quadratic voting logic
+        # ...implement quadratic voting logic...
+        pass
+    else:
+        raise HTTPException(status_code=400, detail="Invalid voting system")
+
     db.commit()
-    # Delete OTP after use
     db.delete(otp_record)
     db.commit()
     return {"message": "Vote cast successfully"}
@@ -189,15 +217,16 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
         )
 
     # Calculate votes for each candidate
-    candidate_votes = {candidate.id: 0 for candidate in candidates}
-    votes = (
-        db.query(Vote)
-        .join(Candidate)
-        .filter(Candidate.election_id == election_id)
-        .all()
-    )
-    for vote in votes:
-        candidate_votes[vote.candidate_id] += 1
+    if election.voting_system == "traditional":
+        candidate_votes = calculate_traditional_votes(election_id, db)
+    elif election.voting_system == "ranked_choice":
+        candidate_votes = calculate_ranked_choice_votes(election_id, db)
+    elif election.voting_system == "score_voting":
+        candidate_votes = calculate_score_votes(election_id, db)
+    elif election.voting_system == "quadratic_voting":
+        candidate_votes = calculate_quadratic_votes(election_id, db)
+    else:
+        raise HTTPException(status_code=400, detail="Invalid voting system")
 
     # Create response with vote counts
     results = [
