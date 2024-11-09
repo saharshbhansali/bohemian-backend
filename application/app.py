@@ -160,7 +160,7 @@ def vote_in_election(
             status_code=404, detail="Candidate not found for this election"
         )
     # Cast vote
-    db_vote = Vote(candidate_id=candidate.id)
+    db_vote = Vote(validation_token=validation_token, candidate_id=candidate.id)
     db.add(db_vote)
     db.commit()
     # Delete OTP after use
@@ -173,6 +173,7 @@ class ElectionResultsResponse(BaseModel):
     results: List[CandidateResponse]
     winner: CandidateResponse = None
     is_draw: bool = False
+
 
 # Get election results
 @app.get("/elections/{election_id}/results", response_model=ElectionResultsResponse)
@@ -215,10 +216,12 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
     ):
         # Check for draw
         max_votes = results[0].votes
-        top_candidates = [candidate for candidate in results if candidate.votes == max_votes]
+        top_candidates = [
+            candidate for candidate in results if candidate.votes == max_votes
+        ]
         if len(top_candidates) > 1:
             return ElectionResultsResponse(results=results, is_draw=True)
-        
+
         winner = results[0]
         # Store the winner in the ElectionWinner table
         db_winner = ElectionWinner(election_id=election.id, winner_id=winner.id)
