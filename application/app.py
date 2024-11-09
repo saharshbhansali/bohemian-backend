@@ -71,9 +71,9 @@ class AlternativeVoteCreate(BaseModel):
     vote: str
 
 
-class Usernames(BaseModel):
-    # usernames: str
-    usernames: List[str]
+class emails(BaseModel):
+    # emails: str
+    emails: List[str]
 
 
 class CandidateCreate(BaseModel):
@@ -88,9 +88,10 @@ class CandidateResponse(BaseModel):
 
 class ElectionCreate(BaseModel):
     title: str
-    candidates: List[CandidateCreate]
-    end_time: datetime
     voting_system: str
+    end_time: datetime
+    candidates: List[CandidateCreate]
+    voter_emails: List[str]
 
 
 class ElectionResponse(BaseModel):
@@ -111,35 +112,27 @@ SEND_EMAILS = False  # Set to True to enable email sending
 WRITE_TO_CSV = True  # Set to True to enable writing to CSV
 
 
-# OTP Generation Endpoint
-@app.post("/generate_otps")
-def generate_otps(usernames: Usernames, db: Session = Depends(get_db)):
-    # Delete existing OTPs
-    db.query(OTP).delete(synchronize_session=False)
-
-    otps = []
-    for username in usernames.usernames:
-        otp = generate_otp()
-        hashed_value = hash_email_otp(username, otp)
-        db_otp = OTP(otp=hashed_value)
-        db.add(db_otp)
-        otps.append(otp)
-
-    db.commit()
-
-    handle_otp_storage_and_notification(
-        usernames.usernames, otps, send_emails=SEND_EMAILS, write_to_csv=WRITE_TO_CSV
-    )
-
-    return {"message": "OTPs generated and stored successfully"}
-
-
 ## CRUD Endpoints
 
 
-# Create election
+# Create an election, and geenrate and send OTPs
 @app.post("/elections/", response_model=ElectionResponse)
 def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
+    # Generate OTPs
+    db.query(OTP).delete(synchronize_session=False)
+    email_otp_mapping = {}
+    for email in election.voter_emails:
+        otp = generate_otp()
+        hashed_value = hash_email_otp(email, otp)
+        db_otp = OTP(otp=hashed_value)
+        db.add(db_otp)
+        email_otp_mapping[email] = otp
+    db.commit()
+    handle_otp_storage_and_notification(
+        email_otp_mapping, send_emails=SEND_EMAILS, write_to_csv=WRITE_TO_CSV
+    )
+
+    # Create election
     db_election = Election(
         title=election.title,
         end_time=election.end_time,

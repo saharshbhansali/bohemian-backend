@@ -48,17 +48,17 @@ def send_email(recipient, subject, body):
 
 
 def handle_otp_storage_and_notification(
-    usernames, otps, send_emails=False, write_to_csv=False
+    email_otp_mapping, send_emails=False, write_to_csv=False
 ):
     if write_to_csv:
         with open("identities.csv", mode="w", newline="") as file:
             writer = csv.writer(file)
             writer.writerow(["email", "otp"])
-            for username, otp in zip(usernames, otps):
+            for username, otp in email_otp_mapping.items():
                 writer.writerow([username, otp])
                 if send_emails:
                     send_email(username, "Your OTP", f"Your OTP is: {otp}")
     else:
-        for username, otp in zip(usernames, otps):
+        for username, otp in email_otp_mapping.items():
             if send_emails:
                 send_email(username, "Your OTP", f"Your OTP is: {otp}")

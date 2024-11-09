@@ -59,6 +59,7 @@ def cast_vote(email, vote_data, election_id):
     assert response.json() == {"message": "Vote cast successfully"}
 
 
+@pytest.mark.skip(reason="This endpoint and test has been deprecated.")
 def test_generate_otps():
     response = client.post(
         "/generate_otps",
@@ -71,14 +72,18 @@ def test_generate_otps():
 
 
 def test_create_election() -> Response:
-    test_generate_otps()
     response = client.post(
         "/elections/",
         json={
             "title": "Test Election",
-            "candidates": [{"name": "Candidate 1"}, {"name": "Candidate 2"}],
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
             "voting_system": "traditional",
+            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "candidates": [{"name": "Candidate 1"}, {"name": "Candidate 2"}],
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+            ],
         },
     )
     assert response.status_code == 200
@@ -146,18 +151,22 @@ def test_get_election_results_draw(mock_datetime):
 
 
 def test_create_ranked_choice_election() -> Response:
-    test_generate_otps()
     response = client.post(
         "/elections/",
         json={
             "title": "Ranked Choice Election",
+            "voting_system": "ranked_choice",
+            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
             "candidates": [
                 {"name": "Candidate 1"},
                 {"name": "Candidate 2"},
                 {"name": "Candidate 3"},
             ],
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
-            "voting_system": "ranked_choice",
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+            ],
         },
     )
     assert response.status_code == 200
@@ -172,18 +181,22 @@ def test_create_ranked_choice_election() -> Response:
 
 
 def test_create_score_voting_election() -> Response:
-    test_generate_otps()
     response = client.post(
         "/elections/",
         json={
             "title": "Score Voting Election",
+            "voting_system": "score_voting",
+            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
             "candidates": [
                 {"name": "Candidate 1"},
                 {"name": "Candidate 2"},
                 {"name": "Candidate 3"},
             ],
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
-            "voting_system": "score_voting",
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+            ],
         },
     )
     assert response.status_code == 200
@@ -198,18 +211,22 @@ def test_create_score_voting_election() -> Response:
 
 
 def test_create_quadratic_voting_election() -> Response:
-    test_generate_otps()
     response = client.post(
         "/elections/",
         json={
             "title": "Quadratic Voting Election",
+            "voting_system": "quadratic_voting",
+            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
             "candidates": [
                 {"name": "Candidate 1"},
                 {"name": "Candidate 2"},
                 {"name": "Candidate 3"},
             ],
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
-            "voting_system": "quadratic_voting",
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+            ],
         },
     )
     assert response.status_code == 200
