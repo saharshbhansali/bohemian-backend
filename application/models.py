@@ -6,6 +6,7 @@ from sqlalchemy import (
     String,
     BLOB,
     DateTime,
+    Enum,
     ForeignKey,
     create_engine,
 )
@@ -27,9 +28,18 @@ class Election(Base):
     __tablename__ = "elections"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
-    candidates = relationship("Candidate", back_populates="election")
+    voting_system = Column(
+        Enum(
+            "traditional",
+            "ranked_choice",
+            "score_voting",
+            "quadratic_voting",
+            name="voting_system_options",
+        ),
+        default="traditional",
+    )
     end_time = Column(DateTime, nullable=True)
-    voting_system = Column(String, default="traditional")
+    candidates = relationship("Candidate", back_populates="election")
 
 
 class Candidate(Base):
