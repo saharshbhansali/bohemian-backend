@@ -49,12 +49,22 @@ def get_otp_from_csv(email):
         reader = csv.DictReader(file)
         for row in reader:
             if row["email"] == email:
+                print(f"Found OTP for {email}: {row['otp']}")  # Debug statement
                 return row["otp"]
+    print(f"OTP for {email} not found in identities.csv")  # Debug statement
     return None
 
 
-def cast_vote(client, email, vote_data, election_id, email_otp_mapping):
-    otp = email_otp_mapping[email]
+def cast_vote(client, email, vote_data, election_id):
+    otp = get_otp_from_csv(email)
+    if otp is None:
+        otp = generate_otp()
+        with open("identities.csv", mode="a") as file:
+            writer = csv.DictWriter(file, fieldnames=["email", "otp"])
+            writer.writerow({"email": email, "otp": otp})
+    hashed_otp = hash_email_otp(email, otp)
+    print(f"Hashed OTP for {email}: {hashed_otp}")  # Debug statement
+
     hashed_otp = hash_email_otp(email, otp)
 
     # Cast vote
@@ -84,41 +94,50 @@ def test_generate_otps(client):
 def election_data(client):
     election_ids = {}
     election_responses = {}
-    email_otp_mapping = {}
 
     def create_election(election_type, title, candidates, voter_emails):
-        response = client.post(
-            "/elections/",
-            json={
-                "title": title,
-                "voting_system": election_type,
-                "end_time": (
-                    datetime.now(datetime_UTC) + timedelta(days=1)
-                ).isoformat(),
-                "candidates": candidates,
-                "voter_emails": voter_emails,
-            },
-        )
+        if election_type == "traditional_draw":
+            response = client.post(
+                "/elections/",
+                json={
+                    "title": title,
+                    "voting_system": "traditional",
+                    "end_time": (
+                        datetime.now(datetime_UTC) + timedelta(days=1)
+                    ).isoformat(),
+                    "candidates": candidates,
+                    "voter_emails": voter_emails,
+                },
+            )
+        else:
+            response = client.post(
+                "/elections/",
+                json={
+                    "title": title,
+                    "voting_system": election_type,
+                    "end_time": (
+                        datetime.now(datetime_UTC) + timedelta(days=1)
+                    ).isoformat(),
+                    "candidates": candidates,
+                    "voter_emails": voter_emails,
+                },
+            )
         assert response.status_code == 200
         data = response.json()
         election_ids[election_type] = data["id"]
         election_responses[election_type] = data
-
-        # Generate OTPs for voters
-        for email in voter_emails:
-            otp = generate_otp()
-            email_otp_mapping[email] = otp
-            hashed_otp = hash_email_otp(email, otp)
-            client.post(
-                "/otps/",
-                json={"email": email, "otp": hashed_otp},
-            )
 
     create_election(
         "traditional",
         "Test Election",
         [{"name": "Candidate 1"}, {"name": "Candidate 2"}],
         ["user1@example.com", "user2@example.com", "user3@example.com"],
+    )
+    create_election(
+        "traditional_draw",
+        "Test Election - Draw",
+        [{"name": "Candidate 1"}, {"name": "Candidate 2"}],
+        ["user1@example.com", "user2@example.com"],
     )
     create_election(
         "ranked_choice",
@@ -139,12 +158,20 @@ def election_data(client):
         ["user1@example.com", "user2@example.com", "user3@example.com"],
     )
 
-    return election_ids, election_responses, email_otp_mapping
+    return election_ids, election_responses
 
 
 @pytest.mark.parametrize(
     "email, vote_index, election_type",
     [
+        ("user1@example.com", 0, "traditional"),
+        ("user2@example.com", 1, "traditional"),
+        ("user3@example.com", 0, "traditional"),
+    ],
+)
+def test_vote_in_election(client, election_data, email, vote_index, election_type):
+    election_ids, election_responses = election_data
+    election_id = election_ids[election_type]
     candidates = election_responses[election_type]["candidates"]
 
     vote_data = {"vote": candidates[vote_index]["id"]}
@@ -173,8 +200,8 @@ def test_get_election_results(mock_datetime, client, election_data):
 @patch("application.app.datetime")
 def test_get_election_results_draw(mock_datetime, client, election_data):
     election_ids, election_responses = election_data
-    election_id = election_ids["traditional"]
-    candidates = election_responses["traditional"]["candidates"]
+    election_id = election_ids["traditional_draw"]
+    candidates = election_responses["traditional_draw"]["candidates"]
 
     cast_vote(client, "user1@example.com", {"vote": candidates[0]["id"]}, election_id)
     cast_vote(client, "user2@example.com", {"vote": candidates[1]["id"]}, election_id)
@@ -230,7 +257,9 @@ def test_vote_in_score_voting_election(
     candidates = election_responses[election_type]["candidates"]
 
     vote_data = {
-        str(candidates[i]["id"]): score + 1 for score, i in enumerate(vote_indices)
+        str(candidates[i]["id"]): score + 1
+        for score, i in enumerate(vote_indices)
+        if i < len(candidates)
     }
     cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
 
