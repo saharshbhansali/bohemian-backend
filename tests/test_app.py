@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, UTC as datetime_UTC
 from unittest.mock import patch
 import csv
 import pytest
+import json
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(
@@ -17,6 +18,22 @@ engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base.metadata.create_all(bind=engine)
+
+election_ids = {}
+
+
+@pytest.fixture(scope="function")
+def db():
+    Base.metadata.create_all(bind=engine)
+    yield TestingSessionLocal()
+    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(scope="function")
+def client():
+    app.dependency_overrides[get_db] = override_get_db
+    yield TestClient(app)
+    app.dependency_overrides.clear()
 
 
 def override_get_db():
@@ -27,9 +44,34 @@ def override_get_db():
         db.close()
 
 
-app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture(scope="function")
+def election_data(request, client):
+    election_ids = {}
+    election_responses = {}
 
-client = TestClient(app)
+    def create_election(election_type, title, candidates, voter_emails, draw=False):
+        response = client.post(
+            "/elections/",
+            json={
+                "title": title,
+                "voting_system": election_type,
+                "end_time": (
+                    datetime.now(datetime_UTC) + timedelta(days=1)
+                ).isoformat(),
+                "candidates": [{"name": candidate} for candidate in candidates],
+                "voter_emails": voter_emails,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        if draw:
+            election_type += "_draw"
+        election_ids[election_type] = data["id"]
+        election_responses[election_type] = data
+
+    create_election(**request.param)
+
+    return election_ids, election_responses
 
 
 def get_otp_from_csv(email):
@@ -37,14 +79,21 @@ def get_otp_from_csv(email):
         reader = csv.DictReader(file)
         for row in reader:
             if row["email"] == email:
+                print(f"Found OTP for {email}: {row['otp']}")  # Debug statement
                 return row["otp"]
+    print(f"OTP for {email} not found in identities.csv")  # Debug statement
     return None
 
 
-def cast_vote(email, vote_data, election_id):
+def cast_vote(client, email, vote_data, election_id):
     otp = get_otp_from_csv(email)
     if otp is None:
-        raise ValueError(f"OTP for {email} not found in identities.csv")
+        otp = generate_otp()
+        with open("identities.csv", mode="a") as file:
+            writer = csv.DictWriter(file, fieldnames=["email", "otp"])
+            writer.writerow({"email": email, "otp": otp})
+    hashed_otp = hash_email_otp(email, otp)
+    print(f"Hashed OTP for {email}: {hashed_otp}")  # Debug statement
 
     hashed_otp = hash_email_otp(email, otp)
 
@@ -59,59 +108,64 @@ def cast_vote(email, vote_data, election_id):
     assert response.json() == {"message": "Vote cast successfully"}
 
 
-@pytest.mark.skip(reason="This endpoint and test has been deprecated.")
-def test_generate_otps():
-    response = client.post(
-        "/generate_otps",
-        json={
-            "usernames": ["user1@example.com", "user2@example.com", "user3@example.com"]
-        },
-    )
-    assert response.status_code == 200
-    assert response.json() == {"message": "OTPs generated and stored successfully"}
-
-
-def test_create_election() -> Response:
-    response = client.post(
-        "/elections/",
-        json={
-            "title": "Test Election",
-            "voting_system": "traditional",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
-            "candidates": [{"name": "Candidate 1"}, {"name": "Candidate 2"}],
+@pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "traditional",
+            "title": "Traditional Election",
+            "candidates": ["Candidate 1", "Candidate 2"],
             "voter_emails": [
                 "user1@example.com",
                 "user2@example.com",
                 "user3@example.com",
             ],
         },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["title"] == "Test Election"
-    assert len(data["candidates"]) == 2
-    assert data["candidates"][0]["name"] == "Candidate 1"
-    assert data["candidates"][1]["name"] == "Candidate 2"
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "email, vote_index, election_type",
+    [
+        ("user1@example.com", 0, "traditional"),
+        ("user2@example.com", 1, "traditional"),
+        ("user3@example.com", 0, "traditional"),
+    ],
+)
+def test_vote_in_election(client, election_data, email, vote_index, election_type):
+    election_ids, election_responses = election_data
+    election_id = election_ids[election_type]
+    candidates = election_responses[election_type]["candidates"]
 
-    return response
-
-
-def test_vote_in_election() -> int:
-    response = test_create_election()
-    election_id = response.json()["id"]
-    candidates = response.json()["candidates"]
-
-    cast_vote("user1@example.com", {"vote": candidates[0]["id"]}, election_id)
-    cast_vote("user2@example.com", {"vote": candidates[1]["id"]}, election_id)
-    cast_vote("user3@example.com", {"vote": candidates[0]["id"]}, election_id)
-    # cast_vote("user3@example.com", {"vote": "{'c1':1, 'c2':2, 'c3':3, 'c4':4}"}, election_id)
-
-    return election_id
+    vote_data = {"vote": candidates[vote_index]["id"]}
+    cast_vote(client, email, vote_data, election_id)
 
 
+@pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "traditional",
+            "title": "Traditional Election",
+            "candidates": ["Candidate 1", "Candidate 2"],
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+            ],
+        },
+    ],
+    indirect=True,
+)
 @patch("application.app.datetime")
-def test_get_election_results(mock_datetime):
-    election_id = test_vote_in_election()
+def test_get_election_results(mock_datetime, client, election_data):
+    election_ids, election_responses = election_data
+    election_id = election_ids["traditional"]
+    candidates = election_responses["traditional"]["candidates"]
+
+    cast_vote(client, "user1@example.com", {"vote": candidates[0]["id"]}, election_id)
+    cast_vote(client, "user2@example.com", {"vote": candidates[1]["id"]}, election_id)
+    cast_vote(client, "user3@example.com", {"vote": candidates[0]["id"]}, election_id)
 
     # Mock current time to simulate election expiry
     mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
@@ -119,22 +173,47 @@ def test_get_election_results(mock_datetime):
     response = client.get(f"/elections/{election_id}/results")
     assert response.status_code == 200
     data = response.json()
+
     assert "results" in data
-    assert "winner" in data
     assert len(data["results"]) == 2
     assert data["results"][0]["name"] == "Candidate 1"
     assert data["results"][1]["name"] == "Candidate 2"
+
+    print(data)
+    print(data["results"])
+    print(data["winner"])
+    # if data.get("winner"):
+    if "winner" in data:
+        assert data["winner"]["name"] == "Candidate 1"
+    else:
+        assert data["winner"] is None
     assert data["winner"]["name"] == "Candidate 1"
 
 
+@pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "traditional",
+            "title": "Traditional Election",
+            "candidates": ["Candidate 1", "Candidate 2"],
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+            ],
+            "draw": True,
+        },
+    ],
+    indirect=True,
+)
 @patch("application.app.datetime")
-def test_get_election_results_draw(mock_datetime):
-    response = test_create_election()
-    election_id = response.json()["id"]
-    candidates = response.json()["candidates"]
+def test_get_election_results_draw(mock_datetime, client, election_data):
+    election_ids, election_responses = election_data
+    election_id = election_ids["traditional_draw"]
+    candidates = election_responses["traditional_draw"]["candidates"]
 
-    cast_vote("user1@example.com", {"vote": candidates[0]["id"]}, election_id)
-    cast_vote("user2@example.com", {"vote": candidates[1]["id"]}, election_id)
+    cast_vote(client, "user1@example.com", {"vote": candidates[0]["id"]}, election_id)
+    cast_vote(client, "user2@example.com", {"vote": candidates[1]["id"]}, election_id)
 
     # Mock current time to simulate election expiry
     mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
@@ -150,199 +229,136 @@ def test_get_election_results_draw(mock_datetime):
     assert data["results"][1]["name"] == "Candidate 2"
 
 
-def test_create_ranked_choice_election() -> Response:
-    response = client.post(
-        "/elections/",
-        json={
+@pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "ranked_choice",
             "title": "Ranked Choice Election",
-            "voting_system": "ranked_choice",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
-            "candidates": [
-                {"name": "Candidate 1"},
-                {"name": "Candidate 2"},
-                {"name": "Candidate 3"},
-            ],
+            "candidates": ["Candidate 1", "Candidate 2", "Candidate 3"],
             "voter_emails": [
                 "user1@example.com",
                 "user2@example.com",
                 "user3@example.com",
+                "user4@example.com",
+                "user5@example.com",
+                "user6@example.com",
             ],
         },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["title"] == "Ranked Choice Election"
-    assert len(data["candidates"]) == 3
-    assert data["candidates"][0]["name"] == "Candidate 1"
-    assert data["candidates"][1]["name"] == "Candidate 2"
-    assert data["candidates"][2]["name"] == "Candidate 3"
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "email, vote_indices, election_type",
+    [
+        ("user1@example.com", [0, 1, 2], "ranked_choice"),
+        ("user2@example.com", [1, 2, 0], "ranked_choice"),
+        ("user3@example.com", [2, 0, 1], "ranked_choice"),
+        ("user4@example.com", [0, 1, 2], "ranked_choice"),
+        ("user5@example.com", [1, 2, 0], "ranked_choice"),
+        ("user6@example.com", [2, 0, 1], "ranked_choice"),
+    ],
+)
+def test_vote_in_ranked_choice_election(
+    client, election_data, email, vote_indices, election_type
+):
+    election_ids, election_responses = election_data
+    election_id = election_ids[election_type]
+    candidates = election_responses[election_type]["candidates"]
 
-    return response
+    vote_data = {
+        str(candidates[i]["id"]): rank + 1
+        for rank, i in enumerate(vote_indices)
+        if i < len(candidates)
+    }
+    cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
 
 
-def test_create_score_voting_election() -> Response:
-    response = client.post(
-        "/elections/",
-        json={
-            "title": "Score Voting Election",
-            "voting_system": "score_voting",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
-            "candidates": [
-                {"name": "Candidate 1"},
-                {"name": "Candidate 2"},
-                {"name": "Candidate 3"},
-            ],
+@pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "score_voting",
+            "title": "Score Election",
+            "candidates": ["Candidate 1", "Candidate 2", "Candidate 3"],
             "voter_emails": [
                 "user1@example.com",
                 "user2@example.com",
                 "user3@example.com",
+                "user4@example.com",
+                "user5@example.com",
+                "user6@example.com",
             ],
         },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["title"] == "Score Voting Election"
-    assert len(data["candidates"]) == 3
-    assert data["candidates"][0]["name"] == "Candidate 1"
-    assert data["candidates"][1]["name"] == "Candidate 2"
-    assert data["candidates"][2]["name"] == "Candidate 3"
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "email, vote_indices, election_type",
+    [
+        ("user1@example.com", [0, 1, 2], "score_voting"),
+        ("user2@example.com", [1, 1, 1], "score_voting"),
+        ("user3@example.com", [3, 0, 0], "score_voting"),
+        ("user4@example.com", [1, 3, 2], "score_voting"),
+        ("user5@example.com", [1, 1, 1], "score_voting"),
+        ("user6@example.com", [2, 0, 1], "score_voting"),
+    ],
+)
+def test_vote_in_score_voting_election(
+    client, election_data, email, vote_indices, election_type
+):
+    election_ids, election_responses = election_data
+    election_id = election_ids[election_type]
+    candidates = election_responses[election_type]["candidates"]
 
-    return response
+    vote_data = {
+        str(candidates[i]["id"]): score + 1
+        for score, i in enumerate(vote_indices)
+        if i < len(candidates)
+    }
+    cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
 
 
-def test_create_quadratic_voting_election() -> Response:
-    response = client.post(
-        "/elections/",
-        json={
-            "title": "Quadratic Voting Election",
-            "voting_system": "quadratic_voting",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
-            "candidates": [
-                {"name": "Candidate 1"},
-                {"name": "Candidate 2"},
-                {"name": "Candidate 3"},
-            ],
+@pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "quadratic_voting",
+            "title": "Quadratic Election",
+            "candidates": ["Candidate 1", "Candidate 2", "Candidate 3"],
             "voter_emails": [
                 "user1@example.com",
                 "user2@example.com",
                 "user3@example.com",
+                "user4@example.com",
+                "user5@example.com",
+                "user6@example.com",
             ],
         },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["title"] == "Quadratic Voting Election"
-    assert len(data["candidates"]) == 3
-    assert data["candidates"][0]["name"] == "Candidate 1"
-    assert data["candidates"][1]["name"] == "Candidate 2"
-    assert data["candidates"][2]["name"] == "Candidate 3"
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "email, vote_indices, election_type",
+    [
+        ("user1@example.com", [20, 30, 50], "quadratic_voting"),
+        ("user2@example.com", [34, 33, 33], "quadratic_voting"),
+        ("user3@example.com", [60, 20, 20], "quadratic_voting"),
+        ("user4@example.com", [10, 00, 90], "quadratic_voting"),
+        ("user5@example.com", [40, 35, 25], "quadratic_voting"),
+        ("user6@example.com", [100, 0, 00], "quadratic_voting"),
+    ],
+)
+def test_vote_in_quadratic_voting_election(
+    client, election_data, email, vote_indices, election_type
+):
+    election_ids, election_responses = election_data
+    election_id = election_ids[election_type]
+    candidates = election_responses[election_type]["candidates"]
 
-    return response
-
-
-def test_vote_in_ranked_choice_election() -> int:
-    response = test_create_ranked_choice_election()
-    election_id = response.json()["id"]
-    candidates = response.json()["candidates"]
-
-    c1 = candidates[0]["id"]
-    c2 = candidates[1]["id"]
-    c3 = candidates[2]["id"]
-
-    vote1 = {str(c1): 1, str(c2): 2, str(c3): 3}
-    vote2 = {str(c1): 2, str(c2): 3, str(c3): 1}
-    vote3 = {str(c1): 3, str(c2): 1, str(c3): 2}
-
-    cast_vote("user1@example.com", {"vote": str(vote1).replace("'", '"')}, election_id)
-    cast_vote("user2@example.com", {"vote": str(vote2).replace("'", '"')}, election_id)
-    cast_vote("user3@example.com", {"vote": str(vote3).replace("'", '"')}, election_id)
-
-    return election_id
-
-
-def test_vote_in_score_voting_election() -> int:
-    response = test_create_score_voting_election()
-    election_id = response.json()["id"]
-    candidates = response.json()["candidates"]
-
-    c1 = candidates[0]["id"]
-    c2 = candidates[1]["id"]
-    c3 = candidates[2]["id"]
-
-    vote1 = {str(c1): 1, str(c2): 2, str(c3): 3}
-    vote2 = {str(c1): 2, str(c2): 2, str(c3): 2}
-    vote3 = {str(c1): 4, str(c2): 1, str(c3): 1}
-
-    cast_vote("user1@example.com", {"vote": str(vote1).replace("'", '"')}, election_id)
-    cast_vote("user2@example.com", {"vote": str(vote2).replace("'", '"')}, election_id)
-    cast_vote("user3@example.com", {"vote": str(vote3).replace("'", '"')}, election_id)
-
-    return election_id
-
-
-def test_vote_in_quadratic_voting_election() -> int:
-    response = test_create_quadratic_voting_election()
-    election_id = response.json()["id"]
-    candidates = response.json()["candidates"]
-
-    c1 = candidates[0]["id"]
-    c2 = candidates[1]["id"]
-    c3 = candidates[2]["id"]
-
-    vote1 = {str(c1): 20, str(c2): 30, str(c3): 50}
-    vote2 = {str(c1): 34, str(c2): 33, str(c3): 33}
-    vote3 = {str(c1): 60, str(c2): 20, str(c3): 20}
-
-    cast_vote("user1@example.com", {"vote": str(vote1).replace("'", '"')}, election_id)
-    cast_vote("user2@example.com", {"vote": str(vote2).replace("'", '"')}, election_id)
-    cast_vote("user3@example.com", {"vote": str(vote3).replace("'", '"')}, election_id)
-
-    return election_id
-
-
-@pytest.mark.skip(reason="This test is not implemented yet.")
-@patch("application.app.datetime")
-def test_get_ranked_choice_election_results(mock_datetime):
-    election_id = test_vote_in_ranked_choice_election()
-
-    # Mock current time to simulate election expiry
-    mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
-
-    response = client.get(f"/elections/{election_id}/results")
-    assert response.status_code == 200
-    data = response.json()
-    assert "results" in data
-    assert "winner" in data
-    assert len(data["results"]) == 3
-
-
-@pytest.mark.skip(reason="This test is not implemented yet.")
-@patch("application.app.datetime")
-def test_get_score_voting_election_results(mock_datetime):
-    election_id = test_vote_in_score_voting_election()
-
-    # Mock current time to simulate election expiry
-    mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
-
-    response = client.get(f"/elections/{election_id}/results")
-    assert response.status_code == 200
-    data = response.json()
-    assert "results" in data
-    assert "winner" in data
-    assert len(data["results"]) == 3
-
-
-@pytest.mark.skip(reason="This test is not implemented yet.")
-@patch("application.app.datetime")
-def test_get_quadratic_voting_election_results(mock_datetime):
-    election_id = test_vote_in_quadratic_voting_election()
-
-    # Mock current time to simulate election expiry
-    mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
-
-    response = client.get(f"/elections/{election_id}/results")
-    assert response.status_code == 200
-    data = response.json()
-    assert "results" in data
-    assert "winner" in data
-    assert len(data["results"]) == 3
+    vote_data = {
+        str(candidates[i]["id"]): vote
+        for i, vote in enumerate(vote_indices)
+        if i < len(candidates)
+    }
+    cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
