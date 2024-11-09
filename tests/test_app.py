@@ -22,14 +22,14 @@ Base.metadata.create_all(bind=engine)
 election_ids = {}
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def db():
     Base.metadata.create_all(bind=engine)
     yield TestingSessionLocal()
     Base.metadata.drop_all(bind=engine)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def client():
     app.dependency_overrides[get_db] = override_get_db
     yield TestClient(app)
@@ -78,19 +78,7 @@ def cast_vote(client, email, vote_data, election_id):
     assert response.json() == {"message": "Vote cast successfully"}
 
 
-@pytest.mark.skip(reason="This endpoint and test has been deprecated.")
-def test_generate_otps(client):
-    response = client.post(
-        "/generate_otps",
-        json={
-            "usernames": ["user1@example.com", "user2@example.com", "user3@example.com"]
-        },
-    )
-    assert response.status_code == 200
-    assert response.json() == {"message": "OTPs generated and stored successfully"}
-
-
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def election_data(client):
     election_ids = {}
     election_responses = {}
