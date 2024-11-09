@@ -3,7 +3,7 @@ import json
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, constr
 from typing import List, Dict
 from .models import (
     Election,
@@ -88,7 +88,7 @@ class CandidateResponse(BaseModel):
 
 class ElectionCreate(BaseModel):
     title: str
-    voting_system: str
+    voting_system: str = Field(..., pattern="^(traditional|ranked_choice|score_voting|quadratic_voting)$")
     end_time: datetime
     candidates: List[CandidateCreate]
     voter_emails: List[str]
