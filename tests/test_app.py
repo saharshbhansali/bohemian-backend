@@ -8,6 +8,7 @@ from application.utils import generate_otp, hash_email_otp
 from datetime import datetime, timedelta, UTC as datetime_UTC
 from unittest.mock import patch
 import csv
+import pytest
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(
@@ -142,3 +143,189 @@ def test_get_election_results_draw(mock_datetime):
     assert len(data["results"]) == 2
     assert data["results"][0]["name"] == "Candidate 1"
     assert data["results"][1]["name"] == "Candidate 2"
+
+
+def test_create_ranked_choice_election() -> Response:
+    test_generate_otps()
+    response = client.post(
+        "/elections/",
+        json={
+            "title": "Ranked Choice Election",
+            "candidates": [
+                {"name": "Candidate 1"},
+                {"name": "Candidate 2"},
+                {"name": "Candidate 3"},
+            ],
+            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "voting_system": "ranked_choice",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Ranked Choice Election"
+    assert len(data["candidates"]) == 3
+    assert data["candidates"][0]["name"] == "Candidate 1"
+    assert data["candidates"][1]["name"] == "Candidate 2"
+    assert data["candidates"][2]["name"] == "Candidate 3"
+
+    return response
+
+
+def test_create_score_voting_election() -> Response:
+    test_generate_otps()
+    response = client.post(
+        "/elections/",
+        json={
+            "title": "Score Voting Election",
+            "candidates": [
+                {"name": "Candidate 1"},
+                {"name": "Candidate 2"},
+                {"name": "Candidate 3"},
+            ],
+            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "voting_system": "score_voting",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Score Voting Election"
+    assert len(data["candidates"]) == 3
+    assert data["candidates"][0]["name"] == "Candidate 1"
+    assert data["candidates"][1]["name"] == "Candidate 2"
+    assert data["candidates"][2]["name"] == "Candidate 3"
+
+    return response
+
+
+def test_create_quadratic_voting_election() -> Response:
+    test_generate_otps()
+    response = client.post(
+        "/elections/",
+        json={
+            "title": "Quadratic Voting Election",
+            "candidates": [
+                {"name": "Candidate 1"},
+                {"name": "Candidate 2"},
+                {"name": "Candidate 3"},
+            ],
+            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "voting_system": "quadratic_voting",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Quadratic Voting Election"
+    assert len(data["candidates"]) == 3
+    assert data["candidates"][0]["name"] == "Candidate 1"
+    assert data["candidates"][1]["name"] == "Candidate 2"
+    assert data["candidates"][2]["name"] == "Candidate 3"
+
+    return response
+
+
+def test_vote_in_ranked_choice_election() -> int:
+    response = test_create_ranked_choice_election()
+    election_id = response.json()["id"]
+    candidates = response.json()["candidates"]
+
+    c1 = candidates[0]["id"]
+    c2 = candidates[1]["id"]
+    c3 = candidates[2]["id"]
+
+    vote1 = {str(c1): 1, str(c2): 2, str(c3): 3}
+    vote2 = {str(c1): 2, str(c2): 3, str(c3): 1}
+    vote3 = {str(c1): 3, str(c2): 1, str(c3): 2}
+
+    cast_vote("user1@example.com", {"vote": str(vote1).replace("'", '"')}, election_id)
+    cast_vote("user2@example.com", {"vote": str(vote2).replace("'", '"')}, election_id)
+    cast_vote("user3@example.com", {"vote": str(vote3).replace("'", '"')}, election_id)
+
+    return election_id
+
+
+def test_vote_in_score_voting_election() -> int:
+    response = test_create_score_voting_election()
+    election_id = response.json()["id"]
+    candidates = response.json()["candidates"]
+
+    c1 = candidates[0]["id"]
+    c2 = candidates[1]["id"]
+    c3 = candidates[2]["id"]
+
+    vote1 = {str(c1): 1, str(c2): 2, str(c3): 3}
+    vote2 = {str(c1): 2, str(c2): 2, str(c3): 2}
+    vote3 = {str(c1): 4, str(c2): 1, str(c3): 1}
+
+    cast_vote("user1@example.com", {"vote": str(vote1).replace("'", '"')}, election_id)
+    cast_vote("user2@example.com", {"vote": str(vote2).replace("'", '"')}, election_id)
+    cast_vote("user3@example.com", {"vote": str(vote3).replace("'", '"')}, election_id)
+
+    return election_id
+
+
+def test_vote_in_quadratic_voting_election() -> int:
+    response = test_create_quadratic_voting_election()
+    election_id = response.json()["id"]
+    candidates = response.json()["candidates"]
+
+    c1 = candidates[0]["id"]
+    c2 = candidates[1]["id"]
+    c3 = candidates[2]["id"]
+
+    vote1 = {str(c1): 20, str(c2): 30, str(c3): 50}
+    vote2 = {str(c1): 34, str(c2): 33, str(c3): 33}
+    vote3 = {str(c1): 60, str(c2): 20, str(c3): 20}
+
+    cast_vote("user1@example.com", {"vote": str(vote1).replace("'", '"')}, election_id)
+    cast_vote("user2@example.com", {"vote": str(vote2).replace("'", '"')}, election_id)
+    cast_vote("user3@example.com", {"vote": str(vote3).replace("'", '"')}, election_id)
+
+    return election_id
+
+
+@pytest.mark.skip(reason="This test is not implemented yet.")
+@patch("application.app.datetime")
+def test_get_ranked_choice_election_results(mock_datetime):
+    election_id = test_vote_in_ranked_choice_election()
+
+    # Mock current time to simulate election expiry
+    mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
+
+    response = client.get(f"/elections/{election_id}/results")
+    assert response.status_code == 200
+    data = response.json()
+    assert "results" in data
+    assert "winner" in data
+    assert len(data["results"]) == 3
+
+
+@pytest.mark.skip(reason="This test is not implemented yet.")
+@patch("application.app.datetime")
+def test_get_score_voting_election_results(mock_datetime):
+    election_id = test_vote_in_score_voting_election()
+
+    # Mock current time to simulate election expiry
+    mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
+
+    response = client.get(f"/elections/{election_id}/results")
+    assert response.status_code == 200
+    data = response.json()
+    assert "results" in data
+    assert "winner" in data
+    assert len(data["results"]) == 3
+
+
+@pytest.mark.skip(reason="This test is not implemented yet.")
+@patch("application.app.datetime")
+def test_get_quadratic_voting_election_results(mock_datetime):
+    election_id = test_vote_in_quadratic_voting_election()
+
+    # Mock current time to simulate election expiry
+    mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
+
+    response = client.get(f"/elections/{election_id}/results")
+    assert response.status_code == 200
+    data = response.json()
+    assert "results" in data
+    assert "winner" in data
+    assert len(data["results"]) == 3
