@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from sqlalchemy import (
     Column,
     Integer,
+    Float,
     String,
     BLOB,
     DateTime,
@@ -72,7 +73,6 @@ class AlternativeVote(Base):
 
 class OTP(Base):
     __tablename__ = "otps"
-
     id = Column(Integer, primary_key=True, index=True)
     otp = Column(String, index=True)
 
@@ -82,6 +82,7 @@ class ElectionWinner(Base):
     id = Column(Integer, primary_key=True, index=True)
     election_id = Column(Integer, ForeignKey("elections.id"))
     winner_id = Column(Integer, ForeignKey("candidates.id"))
+    votes = Column(Float, default=0, nullable=False)
     election = relationship("Election")
     winner = relationship("Candidate")
 

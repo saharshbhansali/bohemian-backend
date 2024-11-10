@@ -83,7 +83,7 @@ class CandidateCreate(BaseModel):
 class CandidateResponse(BaseModel):
     id: int
     name: str
-    votes: int
+    votes: float
 
 
 class ElectionCreate(BaseModel):
@@ -243,6 +243,43 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             status_code=404, detail="No candidates found for this election"
         )
 
+    # Check if the election has expired
+    if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
+        tzinfo=datetime_UTC
+    ):
+        # Check if the winner has already been decided and stored
+        stored_winner = (
+            db.query(ElectionWinner)
+            .filter(ElectionWinner.election_id == election_id)
+            .first()
+        )
+        if stored_winner:
+            winner_candidate = (
+                db.query(Candidate)
+                .filter(Candidate.id == stored_winner.winner_id)
+                .first()
+            )
+            results = [
+                CandidateResponse(
+                    id=candidate.id,
+                    name=candidate.name,
+                    votes=winner_candidate.votes,
+                )
+                for candidate in candidates
+            ]
+            results.sort(key=lambda candidate: candidate.votes, reverse=True)
+            return ElectionResultsResponse(
+                voting_system=election.voting_system,
+                results=results,
+                winner=CandidateResponse(
+                    id=winner_candidate.id,
+                    name=winner_candidate.name,
+                    votes=winner_candidate.votes,
+                ),
+            )
+        else:
+            pass
+
     # Calculate votes for each candidate
     if election.voting_system == "traditional":
         candidate_votes = calculate_traditional_votes(election_id, db)
@@ -282,11 +319,15 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
 
         winner = results[0]
         # Store the winner in the ElectionWinner table
-        db_winner = ElectionWinner(election_id=election.id, winner_id=winner.id)
+        db_winner = ElectionWinner(
+            election_id=election.id, winner_id=winner.id, votes=winner.votes
+        )
         db.add(db_winner)
         db.commit()
         return ElectionResultsResponse(
-            voting_system=election.voting_system, results=results, winner=winner
+            voting_system=election.voting_system,
+            results=results,
+            winner=winner,
         )
 
     return ElectionResultsResponse(

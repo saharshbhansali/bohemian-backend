@@ -4,7 +4,7 @@ from .models import Candidate, Vote
 
 def calculate_traditional_votes(election_id: int, db: Session):
     candidate_votes = {
-        candidate.id: 0
+        candidate.id: 0.0
         for candidate in db.query(Candidate)
         .filter(Candidate.election_id == election_id)
         .all()
@@ -16,7 +16,7 @@ def calculate_traditional_votes(election_id: int, db: Session):
         .all()
     )
     for vote in votes:
-        candidate_votes[vote.candidate_id] += 1
+        candidate_votes[vote.candidate_id] += 1.0
     # print(votes)
     # print(candidate_votes)
     return candidate_votes
