@@ -71,10 +71,10 @@ class AlternativeVote(Base):
     election = relationship("Election")
 
 
-class OTP(Base):
-    __tablename__ = "otps"
+class AuthorizationToken(Base):
+    __tablename__ = "authorization_tokens"
     id = Column(Integer, primary_key=True, index=True)
-    otp = Column(String, index=True)
+    auth_token = Column(String, index=True)
 
 
 class ElectionWinner(Base):
