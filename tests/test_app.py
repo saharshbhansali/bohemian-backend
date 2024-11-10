@@ -1,4 +1,8 @@
 import os
+import csv
+import pytest
+import json
+import logging
 from fastapi.testclient import TestClient
 from fastapi import Response
 from sqlalchemy import create_engine
@@ -8,10 +12,7 @@ from application.models import Base, Election, Candidate, OTP
 from application.utils import generate_otp, hash_email_otp
 from datetime import datetime, timedelta, UTC as datetime_UTC
 from unittest.mock import patch
-import csv
-import pytest
-import json
-import logging
+
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(
@@ -175,7 +176,7 @@ def election_data(client):
         election_ids[election_type] = data["id"]
         election_responses[election_type] = data
 
-    return election_ids, election_responses
+    yield election_ids, election_responses
 
 
 def get_otp_from_csv(email):
