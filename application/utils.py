@@ -1,12 +1,13 @@
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
 import random
 import string
 import hashlib
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import csv
 import os
-from dotenv import load_dotenv
+import logging
 
 load_dotenv()
 
@@ -50,6 +51,8 @@ def send_email(recipient, subject, body):
 def handle_otp_storage_and_notification(
     email_otp_mapping, send_emails=False, write_to_csv=False
 ):
+    logging.debug("Write to CSV: %s", write_to_csv)
+    logging.debug("Email OTP mapping: %s", email_otp_mapping)
     if write_to_csv:
         with open("identities.csv", mode="w", newline="") as file:
             writer = csv.writer(file)
