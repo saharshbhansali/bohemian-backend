@@ -17,7 +17,14 @@ from datetime import datetime
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Determine if running in a test environment
+TESTING = os.getenv("TESTING") == "1"
+
+if TESTING:
+    # Use the same test database as in tests/test_app.py
+    DATABASE_URL = "sqlite:///./test.db"
+else:
+    DATABASE_URL = os.getenv("DATABASE_URL")
 
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -87,4 +94,5 @@ class ElectionWinner(Base):
     winner = relationship("Candidate")
 
 
-Base.metadata.create_all(bind=engine)
+if not TESTING:
+    Base.metadata.create_all(bind=engine)

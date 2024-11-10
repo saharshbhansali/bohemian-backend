@@ -1,3 +1,8 @@
+import os
+
+# Set TESTING environment variable before imports
+os.environ["TESTING"] = "1"
+
 from fastapi.testclient import TestClient
 from fastapi import Response
 from sqlalchemy import create_engine
@@ -29,7 +34,16 @@ def db():
 
 
 @pytest.fixture(scope="module")
-def client():
+def setup_database():
+    # Create tables
+    Base.metadata.create_all(bind=engine)
+    yield
+    # Drop tables after tests
+    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(scope="module")
+def client(setup_database):
     app.dependency_overrides[get_db] = override_get_db
     yield TestClient(app)
     app.dependency_overrides.clear()
@@ -41,6 +55,17 @@ def override_get_db():
         yield db
     finally:
         db.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def clean_identities_csv():
+    # Remove the file if it exists
+    if os.path.exists("identities.csv"):
+        os.remove("identities.csv")
+    yield
+    # Cleanup after tests if necessary
+    # if os.path.exists("identities.csv"):
+    # os.remove("identities.csv")
 
 
 @pytest.fixture(scope="module")
@@ -87,6 +112,26 @@ def election_data(client):
     data = response.json()
     election_ids["traditional_draw"] = data["id"]
     election_responses["traditional_draw"] = data
+
+    # Traditional Election Result
+    response = client.post(
+        "/elections/",
+        json={
+            "title": "Traditional Election",
+            "voting_system": "traditional",
+            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "candidates": [{"name": name} for name in ["Candidate 1", "Candidate 2"]],
+            "voter_emails": [
+                "trad_res_user1@example.com",
+                "trad_res_user2@example.com",
+                "trad_res_user3@example.com",
+            ],
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    election_ids["traditional_result"] = data["id"]
+    election_responses["traditional_result"] = data
 
     # Ranked Choice Election
     response = client.post(
@@ -218,18 +263,18 @@ def test_vote_in_election(client, election_data, email, vote_index, election_typ
 @patch("application.app.datetime")
 def test_get_election_results(mock_datetime, client, election_data):
     election_ids, election_responses = election_data
-    election_id = election_ids["traditional"]
-    candidates = election_responses["traditional"]["candidates"]
+    election_id = election_ids["traditional_result"]
+    candidates = election_responses["traditional_result"]["candidates"]
     logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
 
     cast_vote(
-        client, "trad_user1@example.com", {"vote": candidates[0]["id"]}, election_id
+        client, "trad_res_user1@example.com", {"vote": candidates[0]["id"]}, election_id
     )
     cast_vote(
-        client, "trad_user2@example.com", {"vote": candidates[1]["id"]}, election_id
+        client, "trad_res_user2@example.com", {"vote": candidates[1]["id"]}, election_id
     )
     cast_vote(
-        client, "trad_user3@example.com", {"vote": candidates[0]["id"]}, election_id
+        client, "trad_res_user3@example.com", {"vote": candidates[0]["id"]}, election_id
     )
 
     # Mock current time to simulate election expiry
@@ -377,7 +422,7 @@ def test_vote_in_score_voting_election(
     cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
 
 
-@pytest.mark.skip(reason="Quadratic voting not implemented")
+# @pytest.mark.skip(reason="Quadratic voting not implemented")
 @pytest.mark.parametrize(
     "email, vote_indices, election_type",
     [
