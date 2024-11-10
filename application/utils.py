@@ -51,9 +51,13 @@ def handle_otp_storage_and_notification(
     email_otp_mapping, send_emails=False, write_to_csv=False
 ):
     if write_to_csv:
-        with open("identities.csv", mode="w", newline="") as file:
+        if not os.path.exists("identities.csv"):
+            with open("identities.csv", mode="w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(["email", "otp"])
+
+        with open("identities.csv", mode="a", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["email", "otp"])
             for username, otp in email_otp_mapping.items():
                 writer.writerow([username, otp])
                 if send_emails:

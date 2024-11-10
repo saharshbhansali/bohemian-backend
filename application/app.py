@@ -123,8 +123,8 @@ WRITE_TO_CSV = True  # Set to True to enable writing to CSV
 # Create an election, and geenrate and send OTPs
 @app.post("/elections/", response_model=ElectionResponse)
 def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
+    # To clear out the OTP table: db.query(OTP).delete(synchronize_session=False)
     # Generate OTPs
-    db.query(OTP).delete(synchronize_session=False)
     email_otp_mapping = {}
     for email in election.voter_emails:
         otp = generate_otp()
