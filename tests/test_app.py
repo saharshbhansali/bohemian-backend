@@ -175,6 +175,8 @@ def test_get_election_results(mock_datetime, client, election_data):
     data = response.json()
 
     assert "results" in data
+    assert "voting_system" in data
+    assert data["voting_system"] == "traditional"
     assert len(data["results"]) == 2
     assert data["results"][0]["name"] == "Candidate 1"
     assert data["results"][1]["name"] == "Candidate 2"
@@ -223,6 +225,8 @@ def test_get_election_results_draw(mock_datetime, client, election_data):
     data = response.json()
     assert "results" in data
     assert "is_draw" in data
+    assert "voting_system" in data
+    assert data["voting_system"] == "traditional"
     assert data["is_draw"] is True
     assert len(data["results"]) == 2
     assert data["results"][0]["name"] == "Candidate 1"

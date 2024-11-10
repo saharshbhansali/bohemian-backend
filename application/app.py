@@ -88,7 +88,9 @@ class CandidateResponse(BaseModel):
 
 class ElectionCreate(BaseModel):
     title: str
-    voting_system: str = Field(..., pattern="^(traditional|ranked_choice|score_voting|quadratic_voting)$")
+    voting_system: str = Field(
+        ..., pattern="^(traditional|ranked_choice|score_voting|quadratic_voting)$"
+    )
     end_time: datetime
     candidates: List[CandidateCreate]
     voter_emails: List[str]
@@ -100,10 +102,13 @@ class ElectionResponse(BaseModel):
     candidates: List[CandidateResponse]
 
 
-class ElectionWinnerResponse(BaseModel):
-    id: int
-    name: str
-    votes: int
+class ElectionResultsResponse(BaseModel):
+    voting_system: str = Field(
+        ..., pattern="^(traditional|ranked_choice|score_voting|quadratic_voting)$"
+    )
+    results: List[CandidateResponse]
+    winner: CandidateResponse = None
+    is_draw: bool = False
 
 
 security = HTTPBearer()
@@ -225,12 +230,6 @@ def vote_in_election(
     return {"message": "Vote cast successfully"}
 
 
-class ElectionResultsResponse(BaseModel):
-    results: List[CandidateResponse]
-    winner: CandidateResponse = None
-    is_draw: bool = False
-
-
 # Get election results
 @app.get("/elections/{election_id}/results", response_model=ElectionResultsResponse)
 def get_election_results(election_id: int, db: Session = Depends(get_db)):
@@ -277,13 +276,19 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             candidate for candidate in results if candidate.votes == max_votes
         ]
         if len(top_candidates) > 1:
-            return ElectionResultsResponse(results=results, is_draw=True)
+            return ElectionResultsResponse(
+                voting_system=election.voting_system, results=results, is_draw=True
+            )
 
         winner = results[0]
         # Store the winner in the ElectionWinner table
         db_winner = ElectionWinner(election_id=election.id, winner_id=winner.id)
         db.add(db_winner)
         db.commit()
-        return ElectionResultsResponse(results=results, winner=winner)
+        return ElectionResultsResponse(
+            voting_system=election.voting_system, results=results, winner=winner
+        )
 
-    return ElectionResultsResponse(results=results)
+    return ElectionResultsResponse(
+        voting_system=election.voting_system, results=results
+    )
