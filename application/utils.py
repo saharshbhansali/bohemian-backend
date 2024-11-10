@@ -2,10 +2,10 @@ import random
 import string
 import hashlib
 import smtplib
+import os
+import csv
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import csv
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
