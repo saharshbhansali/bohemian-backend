@@ -73,11 +73,8 @@ def election_data(client):
     # Create elections once per module
     election_ids = {}
     election_responses = {}
-
-    # Traditional Election
-    response = client.post(
-        "/elections/",
-        json={
+    election_configs = {
+        "traditional": {
             "title": "Traditional Election",
             "voting_system": "traditional",
             "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
@@ -88,16 +85,7 @@ def election_data(client):
                 "trad_user3@example.com",
             ],
         },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    election_ids["traditional"] = data["id"]
-    election_responses["traditional"] = data
-
-    # Traditional Election (Draw)
-    response = client.post(
-        "/elections/",
-        json={
+        "traditional_draw": {
             "title": "Traditional Election (Draw)",
             "voting_system": "traditional",
             "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
@@ -107,17 +95,8 @@ def election_data(client):
                 "draw_user2@example.com",
             ],
         },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    election_ids["traditional_draw"] = data["id"]
-    election_responses["traditional_draw"] = data
-
-    # Traditional Election Result
-    response = client.post(
-        "/elections/",
-        json={
-            "title": "Traditional Election",
+        "traditional_result": {
+            "title": "Traditional Election (Result)",
             "voting_system": "traditional",
             "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
             "candidates": [{"name": name} for name in ["Candidate 1", "Candidate 2"]],
@@ -127,16 +106,7 @@ def election_data(client):
                 "trad_res_user3@example.com",
             ],
         },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    election_ids["traditional_result"] = data["id"]
-    election_responses["traditional_result"] = data
-
-    # Ranked Choice Election
-    response = client.post(
-        "/elections/",
-        json={
+        "ranked_choice": {
             "title": "Ranked Choice Election",
             "voting_system": "ranked_choice",
             "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
@@ -152,16 +122,7 @@ def election_data(client):
                 "rank_user6@example.com",
             ],
         },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    election_ids["ranked_choice"] = data["id"]
-    election_responses["ranked_choice"] = data
-
-    # Score Voting Election
-    response = client.post(
-        "/elections/",
-        json={
+        "score_voting": {
             "title": "Score Election",
             "voting_system": "score_voting",
             "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
@@ -177,16 +138,7 @@ def election_data(client):
                 "score_user6@example.com",
             ],
         },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    election_ids["score_voting"] = data["id"]
-    election_responses["score_voting"] = data
-
-    # Quadratic Voting Election
-    response = client.post(
-        "/elections/",
-        json={
+        "quadratic_voting": {
             "title": "Quadratic Election",
             "voting_system": "quadratic_voting",
             "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
@@ -202,11 +154,14 @@ def election_data(client):
                 "quad_user6@example.com",
             ],
         },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    election_ids["quadratic_voting"] = data["id"]
-    election_responses["quadratic_voting"] = data
+    }
+
+    for election_type, config in election_configs.items():
+        response = client.post("/elections/", json=config)
+        assert response.status_code == 200
+        data = response.json()
+        election_ids[election_type] = data["id"]
+        election_responses[election_type] = data
 
     return election_ids, election_responses
 
