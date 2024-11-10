@@ -165,6 +165,26 @@ def test_get_election_results(mock_datetime, client, election_data):
 
     cast_vote(client, "user1@example.com", {"vote": candidates[0]["id"]}, election_id)
     cast_vote(client, "user2@example.com", {"vote": candidates[1]["id"]}, election_id)
+
+    # Mock current time to simulate election expiry
+    mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=0.5)
+
+    response = client.get(f"/elections/{election_id}/results")
+    assert response.status_code == 200
+    data = response.json()
+    print(data)
+    print(data["results"])
+    print(data["winner"])
+
+    assert "results" in data
+    assert "is_draw" in data
+    assert "voting_system" in data
+    assert data["voting_system"] == "traditional"
+    assert data["is_draw"] is False
+    assert len(data["results"]) == 2
+    assert data["results"][0]["name"] == "Candidate 1"
+    assert data["results"][1]["name"] == "Candidate 2"
+
     cast_vote(client, "user3@example.com", {"vote": candidates[0]["id"]}, election_id)
 
     # Mock current time to simulate election expiry
@@ -184,11 +204,6 @@ def test_get_election_results(mock_datetime, client, election_data):
     print(data)
     print(data["results"])
     print(data["winner"])
-    # if data.get("winner"):
-    if "winner" in data:
-        assert data["winner"]["name"] == "Candidate 1"
-    else:
-        assert data["winner"] is None
     assert data["winner"]["name"] == "Candidate 1"
 
 
