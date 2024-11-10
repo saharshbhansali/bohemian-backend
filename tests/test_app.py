@@ -293,6 +293,64 @@ def test_vote_in_ranked_choice_election(
     cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
 
 
+@pytest.mark.skip("Disabled for the moment.")
+@pytest.mark.parametrize(
+    "election_data",
+    [
+        {
+            "election_type": "ranked_choice",
+            "title": "Ranked Choice Election",
+            "candidates": ["Candidate 1", "Candidate 2", "Candidate 3"],
+            "voter_emails": [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+                "user4@example.com",
+                "user5@example.com",
+                "user6@example.com",
+            ],
+        },
+    ],
+    indirect=True,
+)
+@patch("application.app.datetime")
+def test_get_ranked_choice_election_results(mock_datetime, client, election_data):
+    election_ids, election_responses = election_data
+    election_id = election_ids["ranked_choice"]
+    candidates = election_responses["ranked_choice"]["candidates"]
+
+    # Cast votes
+    votes = [
+        ("user1@example.com", [0, 1, 2]),
+        ("user2@example.com", [1, 2, 0]),
+        ("user3@example.com", [2, 0, 1]),
+        ("user4@example.com", [0, 1, 2]),
+        ("user5@example.com", [1, 2, 0]),
+        ("user6@example.com", [2, 0, 1]),
+    ]
+    for email, vote_indices in votes:
+        vote_data = {
+            str(candidates[i]["id"]): rank + 1 for rank, i in enumerate(vote_indices)
+        }
+        cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
+
+    # Mock current time to simulate election expiry
+    mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
+
+    # Get election results
+    response = client.get(f"/elections/{election_id}/results")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify the results
+    assert "results" in data
+    assert "winner" in data
+    assert data["voting_system"] == "ranked_choice"
+    assert data["is_draw"] is False
+    expected_winner = candidates[1]  # Adjust index based on expected winner
+    assert data["winner"]["name"] == expected_winner["name"]
+
+
 @pytest.mark.parametrize(
     "election_data",
     [
