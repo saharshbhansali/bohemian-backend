@@ -124,7 +124,6 @@ WRITE_TO_CSV = True  # Set to True to enable writing to CSV
 @app.post("/elections/", response_model=ElectionResponse)
 def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
     # Generate OTPs
-    db.query(OTP).delete(synchronize_session=False)
     email_otp_mapping = {}
     for email in election.voter_emails:
         otp = generate_otp()
