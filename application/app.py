@@ -10,13 +10,13 @@ from .models import (
     Candidate,
     Vote,
     AlternativeVote,
-    OTP,
+    AuthorizationToken,
     ElectionWinner,
     SessionLocal,
 )
 from .utils import (
     generate_otp,
-    hash_email_otp,
+    create_auth_token,
     send_email,
     handle_otp_storage_and_notification,
 )
@@ -123,19 +123,24 @@ WRITE_TO_CSV = True  # Set to True to enable writing to CSV
 # Create an election, and geenrate and send OTPs
 @app.post("/elections/", response_model=ElectionResponse)
 def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
+    logger.info("Creating election with title: %s", election.title)
     # Generate OTPs
-    db.query(OTP).delete(synchronize_session=False)
+    db.query(AuthorizationToken).delete(synchronize_session=False)
     email_otp_mapping = {}
     for email in election.voter_emails:
         otp = generate_otp()
-        hashed_value = hash_email_otp(email, otp)
-        db_otp = OTP(otp=hashed_value)
-        db.add(db_otp)
+        hashed_token = create_auth_token(email, otp)
+        db_auth_token = AuthorizationToken(token=hashed_token)
+        db.add(db_auth_token)
         email_otp_mapping[email] = otp
+        logger.debug("Generated OTP for %s: %s", email, otp)
+        logger.debug("Created hashed token for %s: %s", email, hashed_token)
     db.commit()
+    logger.info("Authorization tokens committed to the database")
     handle_otp_storage_and_notification(
         email_otp_mapping, send_emails=SEND_EMAILS, write_to_csv=WRITE_TO_CSV
     )
+    logger.info("Handled OTP storage and notification")
 
     # Create election
     db_election = Election(
@@ -146,6 +151,7 @@ def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
     db.add(db_election)
     db.commit()
     db.refresh(db_election)
+    logger.info("Election created with ID: %d", db_election.id)
     candidates = []
     for candidate in election.candidates:
         db_candidate = Candidate(name=candidate.name, election_id=db_election.id)
@@ -153,6 +159,7 @@ def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(db_candidate)
         candidates.append(db_candidate)
+        logger.debug("Candidate added: %s", candidate.name)
     db_election.candidates = candidates
     return db_election
 
@@ -166,9 +173,16 @@ def vote_in_election(
     db: Session = Depends(get_db),
 ):
     validation_token = credentials.credentials
+    logger.info("Received vote for election ID: %d", election_id)
+    logger.debug("Validation token: %s", validation_token)
     # Validate OTP
-    otp_record = db.query(OTP).filter(OTP.otp == validation_token).first()
-    if otp_record is None:
+    token_record = (
+        db.query(AuthorizationToken)
+        .filter(AuthorizationToken.token == validation_token)
+        .first()
+    )
+    if token_record is None:
+        logger.warning("Invalid OTP for token: %s", validation_token)
         raise HTTPException(status_code=401, detail="Invalid OTP")
 
     election = db.query(Election).filter(Election.id == election_id).first()
@@ -181,6 +195,7 @@ def vote_in_election(
             .first()
         )
         if candidate is None:
+            logger.error("Candidate not found for election ID: %d", election_id)
             raise HTTPException(
                 status_code=404, detail="Candidate not found for this election"
             )
@@ -190,6 +205,7 @@ def vote_in_election(
             candidate_id=candidate.id,
         )
         db.add(db_vote)
+        logger.info("Vote added for candidate ID: %d", candidate.id)
     elif election.voting_system in (
         "ranked_choice",
         "score_voting",
@@ -206,6 +222,11 @@ def vote_in_election(
                 )
                 .first()
             ):
+                logger.error(
+                    "Candidate with ID %s not found for election ID: %d",
+                    candidate_id,
+                    election_id,
+                )
                 raise HTTPException(
                     status_code=404,
                     detail=f"Candidate with ID {candidate_id} not found for this election",
@@ -218,27 +239,35 @@ def vote_in_election(
             vote=str.encode(vote.vote),
         )
         db.add(db_vote)
+        logger.info("Alternative vote added for election ID: %d", election_id)
     else:
+        logger.error(
+            "Invalid voting system and/or vote type for election ID: %d", election_id
+        )
         raise HTTPException(
             status_code=400,
             detail="Invalid voting system and/or vote type for this election",
         )
 
     db.commit()
-    db.delete(otp_record)
+    db.delete(validation_token)
     db.commit()
+    logger.info("Vote cast successfully for election ID: %d", election_id)
     return {"message": "Vote cast successfully"}
 
 
 # Get election results
 @app.get("/elections/{election_id}/results", response_model=ElectionResultsResponse)
 def get_election_results(election_id: int, db: Session = Depends(get_db)):
+    logger.info("Fetching results for election ID: %d", election_id)
     election = db.query(Election).filter(Election.id == election_id).first()
     if not election:
+        logger.error("Election not found with ID: %d", election_id)
         raise HTTPException(status_code=404, detail="Election not found")
 
     candidates = db.query(Candidate).filter(Candidate.election_id == election_id).all()
     if not candidates:
+        logger.error("No candidates found for election ID: %d", election_id)
         raise HTTPException(
             status_code=404, detail="No candidates found for this election"
         )
@@ -268,6 +297,9 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                 for candidate in candidates
             ]
             results.sort(key=lambda candidate: candidate.votes, reverse=True)
+            logger.info(
+                "Returning stored election results for election ID: %d", election_id
+            )
             return ElectionResultsResponse(
                 voting_system=election.voting_system,
                 results=results,
@@ -290,6 +322,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
     elif election.voting_system == "quadratic_voting":
         candidate_votes = calculate_quadratic_votes(election_id, db)
     else:
+        logger.error("Invalid voting system for election ID: %d", election_id)
         raise HTTPException(status_code=400, detail="Invalid voting system")
 
     # Create response with vote counts
@@ -313,6 +346,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             candidate for candidate in results if candidate.votes == max_votes
         ]
         if len(top_candidates) > 1:
+            logger.info("Election ID: %d resulted in a draw", election_id)
             return ElectionResultsResponse(
                 voting_system=election.voting_system, results=results, is_draw=True
             )
@@ -324,12 +358,28 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
         )
         db.add(db_winner)
         db.commit()
+        logger.info("Winner stored for election ID: %d", election_id)
         return ElectionResultsResponse(
             voting_system=election.voting_system,
             results=results,
             winner=winner,
         )
 
+    logger.info("Returning election results for election ID: %d", election_id)
     return ElectionResultsResponse(
         voting_system=election.voting_system, results=results
     )
+
+
+# @app.get("/verify_token/{token}", response_model=dict)
+# def verify_token(token: str, db: Session = Depends(get_db)):
+#     logger.info("Verifying token: %s", token)
+#     token_record = (
+#         db.query(AuthorizationToken).filter(AuthorizationToken.token == token).first()
+#     )
+#     if token_record:
+#         logger.info("Token exists: %s", token)
+#         return {"status": "Token exists"}
+#     else:
+#         logger.warning("Token does not exist: %s", token)
+#         return {"status": "Token does not exist"}
