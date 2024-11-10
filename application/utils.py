@@ -17,7 +17,7 @@ def generate_otp(length=21):
     return otp
 
 
-def hash_email_otp(email, otp):
+def create_auth_token(email, otp):
     return hashlib.sha256((email + otp).encode()).hexdigest()
 
 

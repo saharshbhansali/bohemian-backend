@@ -10,13 +10,13 @@ from .models import (
     Candidate,
     Vote,
     AlternativeVote,
-    OTP,
+    AuthorizationToken,
     ElectionWinner,
     SessionLocal,
 )
 from .utils import (
     generate_otp,
-    hash_email_otp,
+    create_auth_token,
     send_email,
     handle_otp_storage_and_notification,
 )
@@ -128,9 +128,9 @@ def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
     email_otp_mapping = {}
     for email in election.voter_emails:
         otp = generate_otp()
-        hashed_value = hash_email_otp(email, otp)
-        db_otp = OTP(otp=hashed_value)
-        db.add(db_otp)
+        auth_token = create_auth_token(email, otp)
+        db_auth = AuthorizationToken(auth_token=auth_token)
+        db.add(db_auth)
         email_otp_mapping[email] = otp
     db.commit()
     handle_otp_storage_and_notification(
@@ -167,7 +167,7 @@ def vote_in_election(
 ):
     validation_token = credentials.credentials
     # Validate OTP
-    otp_record = db.query(OTP).filter(OTP.otp == validation_token).first()
+    otp_record = db.query(AuthorizationToken).filter(AuthorizationToken.auth_token == validation_token).first()
     if otp_record is None:
         raise HTTPException(status_code=401, detail="Invalid OTP")
 

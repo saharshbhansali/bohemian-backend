@@ -8,8 +8,8 @@ from fastapi import Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from application.app import app, get_db
-from application.models import Base, Election, Candidate, OTP
-from application.utils import generate_otp, hash_email_otp
+from application.models import Base, Election, Candidate, AuthorizationToken
+from application.utils import generate_otp, create_auth_token
 from datetime import datetime, timedelta, UTC as datetime_UTC
 from unittest.mock import patch
 
@@ -196,13 +196,13 @@ def cast_vote(client, email, vote_data, election_id):
         # Error if OTP not found and stop the test
         logging.error("OTP not found for %s", email)
         assert False
-    hashed_otp = hash_email_otp(email, otp)
-    print(f"Hashed OTP for {email}: {hashed_otp}")  # Debug statement
+    auth_token = create_auth_token(email, otp)
+    logging.debug(f"Hashed OTP for {email}: {auth_token}")  # Debug statement
 
     # Cast vote
     response = client.post(
         f"/elections/{election_id}/vote",
-        headers={"Authorization": f"Bearer {hashed_otp}"},
+        headers={"Authorization": f"Bearer {auth_token}"},
         json=vote_data,
     )
 
@@ -235,15 +235,18 @@ def test_get_election_results(mock_datetime, client, election_data):
     candidates = election_responses["traditional_result"]["candidates"]
     logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
 
-    cast_vote(
-        client, "trad_res_user1@example.com", {"vote": candidates[0]["id"]}, election_id
-    )
-    cast_vote(
-        client, "trad_res_user2@example.com", {"vote": candidates[1]["id"]}, election_id
-    )
-    cast_vote(
-        client, "trad_res_user3@example.com", {"vote": candidates[0]["id"]}, election_id
-    )
+    vote_data = [
+        ("trad_res_user1@example.com", 0),
+        ("trad_res_user2@example.com", 1),
+        ("trad_res_user3@example.com", 0),
+    ]
+    for email, vote_index in vote_data:
+        cast_vote(
+            client,
+            email,
+            {"vote": candidates[vote_index]["id"]},
+            election_id,
+        )
 
     # Mock current time to simulate election expiry
     mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
@@ -273,12 +276,17 @@ def test_get_election_results_draw(mock_datetime, client, election_data):
     election_id = election_ids["traditional_draw"]
     candidates = election_responses["traditional_draw"]["candidates"]
 
-    cast_vote(
-        client, "draw_user1@example.com", {"vote": candidates[0]["id"]}, election_id
-    )
-    cast_vote(
-        client, "draw_user2@example.com", {"vote": candidates[1]["id"]}, election_id
-    )
+    vote_data = [
+        ("draw_user1@example.com", 0),
+        ("draw_user2@example.com", 1),
+    ]
+    for email, vote_index in vote_data:
+        cast_vote(
+            client,
+            email,
+            {"vote": candidates[vote_index]["id"]},
+            election_id,
+        )
 
     # Mock current time to simulate election expiry
     mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
@@ -322,28 +330,26 @@ def test_vote_in_ranked_choice_election(client, election_data, email, vote_indic
 
 
 @pytest.mark.skip(reason="Score voting not implemented")
-@pytest.mark.parametrize(
-    "email, vote_indices",
-    [
+@patch("application.app.datetime")
+def test_get_ranked_choice_election_results(mock_datetime, client):
+    election_ids, election_responses = election_data
+    election_id = election_ids["ranked_choice_result"]
+    candidates = election_responses["ranked_choice_result"]["candidates"]
+    logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
+
+    vote_data = [
         ("rank_res_user1@example.com", [0, 1, 2]),
         ("rank_res_user2@example.com", [1, 2, 0]),
         ("rank_res_user3@example.com", [2, 0, 1]),
         ("rank_res_user4@example.com", [0, 1, 2]),
         ("rank_res_user5@example.com", [1, 2, 0]),
         ("rank_res_user6@example.com", [2, 0, 1]),
-    ],
-)
-@patch("application.app.datetime")
-def test_get_ranked_choice_election_results(mock_datetime, client, email, vote_indices):
-    election_ids, election_responses = election_data
-    election_id = election_ids["ranked_choice_result"]
-    candidates = election_responses["ranked_choice_result"]["candidates"]
-    logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
-
-    vote_data = {
-        str(candidates[i]["id"]): rank + 1 for rank, i in enumerate(vote_indices)
-    }
-    cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
+    ]
+    for email, vote_indices in vote_data:
+        vote = {
+            str(candidates[i]["id"]): rank + 1 for rank, i in enumerate(vote_indices)
+        }
+        cast_vote(client, email, {"vote": json.dumps(vote)}, election_id)
 
     # Mock current time to simulate election expiry
     mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
