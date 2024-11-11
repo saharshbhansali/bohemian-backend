@@ -75,6 +75,8 @@ class AuthorizationToken(Base):
     __tablename__ = "authorization_tokens"
     id = Column(Integer, primary_key=True, index=True)
     auth_token = Column(String, index=True)
+    election_id = Column(Integer, ForeignKey("elections.id"))
+    election = relationship("Election")
 
 
 class ElectionWinner(Base):

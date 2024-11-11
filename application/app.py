@@ -124,19 +124,6 @@ WRITE_TO_CSV = True  # Set to True to enable writing to CSV
 # Create an election, and geenrate and send OTPs
 @app.post("/elections/", response_model=ElectionResponse)
 def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
-    # To clear out the OTP table: db.query(OTP).delete(synchronize_session=False)
-    # Generate OTPs
-    email_otp_mapping = {}
-    for email in election.voter_emails:
-        otp = generate_otp()
-        auth_token = create_auth_token(email, otp)
-        db_auth = AuthorizationToken(auth_token=auth_token)
-        db.add(db_auth)
-        email_otp_mapping[email] = otp
-    db.commit()
-    handle_otp_storage_and_notification(
-        email_otp_mapping, send_emails=SEND_EMAILS, write_to_csv=WRITE_TO_CSV
-    )
 
     # Create election
     db_election = Election(
@@ -147,6 +134,7 @@ def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
     db.add(db_election)
     db.commit()
     db.refresh(db_election)
+
     candidates = []
     for candidate in election.candidates:
         db_candidate = Candidate(name=candidate.name, election_id=db_election.id)
@@ -155,6 +143,21 @@ def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
         db.refresh(db_candidate)
         candidates.append(db_candidate)
     db_election.candidates = candidates
+
+    # To clear out the OTP table: db.query(OTP).delete(synchronize_session=False)
+    # Generate OTPs
+    email_otp_mapping = {}
+    for email in election.voter_emails:
+        otp = generate_otp()
+        auth_token = create_auth_token(email, otp)
+        db_auth = AuthorizationToken(auth_token=auth_token, election_id=db_election.id)
+        db.add(db_auth)
+        email_otp_mapping[email] = otp
+    db.commit()
+    handle_otp_storage_and_notification(
+        email_otp_mapping, send_emails=SEND_EMAILS, write_to_csv=WRITE_TO_CSV
+    )
+
     return db_election
 
 
@@ -170,7 +173,10 @@ def vote_in_election(
     # Validate auth_token
     auth_token_record = (
         db.query(AuthorizationToken)
-        .filter(AuthorizationToken.auth_token == validation_token)
+        .filter(
+            (AuthorizationToken.auth_token == validation_token)
+            & (AuthorizationToken.election_id == election_id)
+        )
         .first()
     )
     if auth_token_record is None:
