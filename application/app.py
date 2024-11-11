@@ -302,15 +302,15 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
         results.sort(key=lambda candidate: candidate.votes, reverse=True)
 
     elif election.voting_system == "ranked_choice":
-        winning_candidate_id = calculate_ranked_choice_votes(election_id, db)
+        candidate_votes = calculate_ranked_choice_votes(election_id, db)
         results = [
             CandidateResponse(
                 id=candidate.id,
                 name=candidate.name,
-                votes=1,
+                votes=candidate_votes[candidate.id],
             )
             for candidate in candidates
-            if candidate.id == winning_candidate_id
+            if candidate.id in candidate_votes.keys()
         ]
     elif election.voting_system == "score_voting":
         candidate_votes = calculate_score_votes(election_id, db)

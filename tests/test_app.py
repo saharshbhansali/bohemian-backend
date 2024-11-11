@@ -136,6 +136,23 @@ def election_data(client):
                 "rank_res_user6@example.com",
             ],
         },
+        "ranked_choice_draw": {
+            "title": "Ranked Choice Election (Draw)",
+            "voting_system": "ranked_choice",
+            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "candidates": [
+                {"name": name}
+                for name in ["Candidate 1", "Candidate 2", "Candidate 3", "Candidate 4"]
+            ],
+            "voter_emails": [
+                "rank_draw_user1@example.com",
+                "rank_draw_user2@example.com",
+                "rank_draw_user3@example.com",
+                "rank_draw_user4@example.com",
+                "rank_draw_user5@example.com",
+                "rank_draw_user6@example.com",
+            ],
+        },
         "score_voting": {
             "title": "Score Election",
             "voting_system": "score_voting",
@@ -344,7 +361,7 @@ def test_get_ranked_choice_election_results(mock_datetime, client, election_data
     vote_data = [
         ("rank_res_user1@example.com", [0, 1, 2, 3]),
         ("rank_res_user2@example.com", [1, 2, 0, 3]),
-        ("rank_res_user3@example.com", [2, 0, 1, 3]),
+        ("rank_res_user3@example.com", [2, 1, 0, 3]),
         ("rank_res_user4@example.com", [0, 2, 1, 3]),
         ("rank_res_user5@example.com", [1, 0, 2, 3]),
         ("rank_res_user6@example.com", [2, 1, 0, 3]),
@@ -372,6 +389,48 @@ def test_get_ranked_choice_election_results(mock_datetime, client, election_data
     expected_winner = candidates[1]  # Adjust index based on expected winner
     assert len(data["results"]) == 1
     assert data["winner"]["name"] == expected_winner["name"]
+    assert data["winner"]["votes"] == 6.0
+
+
+@patch("application.app.datetime")
+def test_get_ranked_choice_election_results_draw(mock_datetime, client, election_data):
+    election_ids, election_responses = election_data
+    election_id = election_ids["ranked_choice_result"]
+    candidates = election_responses["ranked_choice_result"]["candidates"]
+    # logging.debug("Election variables:\n%s\n%s", election_ids, election_responses)
+
+    vote_data = [
+        ("rank_res_user1@example.com", [0, 1, 2, 3]),
+        ("rank_res_user2@example.com", [1, 2, 0, 3]),
+        ("rank_res_user3@example.com", [2, 0, 1, 3]),
+        ("rank_res_user4@example.com", [0, 2, 1, 3]),
+        ("rank_res_user5@example.com", [1, 0, 2, 3]),
+        ("rank_res_user6@example.com", [2, 1, 0, 3]),
+    ]
+    for email, vote_indices in vote_data:
+        vote = {
+            str(candidates[i]["id"]): rank + 1 for rank, i in enumerate(vote_indices)
+        }
+        # print("Cast vote: ", vote)
+        cast_vote(client, email, {"vote": json.dumps(vote)}, election_id)
+
+    # Mock current time to simulate election expiry
+    mock_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
+
+    # Get election results
+    response = client.get(f"/elections/{election_id}/results")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify the results
+    assert "results" in data
+    assert "winner" in data
+    assert data["voting_system"] == "ranked_choice"
+    assert data["is_draw"] is True
+    expected_winner = candidates[1]  # Adjust index based on expected winner
+    assert len(data["results"]) == 1
+    assert data["winner"]["name"] == expected_winner["name"]
+    assert data["winner"]["votes"] == 6.0
 
 
 @pytest.mark.parametrize(
