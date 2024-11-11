@@ -1,5 +1,6 @@
 import logging
 import json
+import datetime
 import os
 import ast
 import csv
@@ -13,15 +14,15 @@ def ranked_choice(vote_format, candidates):  # Change parameter to whatever
     logging.debug(f"Vote format: {vote_format}")
     logging.debug(f"Candidates: {candidates}")
 
-    print(f"Vote format: {vote_format}")
-    print(f"Candidates: {candidates}")
-    list_format = []
+    # print(f"Vote format: {vote_format}")
+    # print(f"Candidates: {candidates}")
+    vote_list = []
     for i in range(len(vote_format)):
-        dict_1 = ast.literal_eval(vote_format[i])
-        list_format.append(dict((v, k) for k, v in dict_1.items()))
-    print(list_format)
+        vote_dict = ast.literal_eval(vote_format[i])
+        vote_list.append(dict((v, k) for k, v in vote_dict.items()))
+    # print(vote_list)
 
-    columns = list_format[0].keys()
+    columns = vote_list[0].keys()
 
     # Define the candidates
     eliminated_candidates = []
@@ -37,13 +38,13 @@ def ranked_choice(vote_format, candidates):  # Change parameter to whatever
             ["voter"] + [f"choice_{i+1}" for i in range(len(columns))]
         )  # len(columns)
 
-        for i in range(len(list_format)):  # list_format
+        for i in range(len(vote_list)):  # vote_list
             # Generate unique candidate choices for each voter
 
             vote_rec = []
             vote_rec.append(f"voter{i+1}")
             for count in range(1, len(columns) + 1):
-                vote_rec.append(list_format[i][count])
+                vote_rec.append(vote_list[i][count])
             writer.writerow(vote_rec)
 
     # Read the CSV file
@@ -147,6 +148,8 @@ def calculate_traditional_votes(election_id: int, db: Session):
 
 def calculate_ranked_choice_votes(election_id: int, db: Session):
 
+    election = db.query(Election).filter(Election.id == election_id).first()
+
     # Get all candidates and votes
     candidates = db.query(Candidate).filter(Candidate.election_id == election_id).all()
     votes = (
@@ -154,6 +157,23 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
         .filter(AlternativeVote.election_id == election_id)
         .all()
     )
+
+    total_votes = float(len(votes))
+    if datetime.datetime.now() < election.end_time:
+        candidate_votes = {
+            candidate.id: 0.0
+            for candidate in db.query(Candidate)
+            .filter(Candidate.election_id == election_id)
+            .all()
+        }
+
+        logging.debug(msg=f"{votes}")
+        logging.debug(msg=f"{candidate_votes}")
+
+        for vote in votes:
+            candidate_votes[int(list(json.loads(vote.vote.decode()).keys())[0])] += 1.0
+
+        return candidate_votes
 
     # print(f"Votes: {votes}")
 
@@ -165,7 +185,7 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
     print(
         f"{winner}\nWinner: {winning_candidate.name}, with ID: {winning_candidate.id}\n {winning_candidate}"
     )
-    return winner
+    return {f"{winner}": total_votes}
 
 
 def calculate_score_votes(election_id: int, db: Session):
