@@ -155,7 +155,11 @@ def create_election(election: ElectionCreate, db: Session = Depends(get_db)):
         email_otp_mapping[email] = otp
     db.commit()
     handle_otp_storage_and_notification(
-        email_otp_mapping, send_emails=SEND_EMAILS, write_to_csv=WRITE_TO_CSV
+        db_election.id,
+        db_election.title,
+        email_otp_mapping,
+        send_emails=SEND_EMAILS,
+        write_to_csv=WRITE_TO_CSV,
     )
 
     return db_election

@@ -48,7 +48,11 @@ def send_email(recipient, subject, body):
 
 
 def handle_otp_storage_and_notification(
-    email_otp_mapping, send_emails=False, write_to_csv=False
+    election_id,
+    election_title,
+    email_otp_mapping,
+    send_emails=False,
+    write_to_csv=False,
 ):
     if write_to_csv:
         if not os.path.exists("identities.csv"):
@@ -61,8 +65,16 @@ def handle_otp_storage_and_notification(
             for username, otp in email_otp_mapping.items():
                 writer.writerow([username, otp])
                 if send_emails:
-                    send_email(username, "Your OTP", f"Your OTP is: {otp}")
+                    send_email(
+                        username,
+                        f"Your OTP for election #{election_id}: {election_title}",
+                        f"Election #{election_id}: {election_title}\n OTP: {otp}",
+                    )
     else:
         for username, otp in email_otp_mapping.items():
             if send_emails:
-                send_email(username, "Your OTP", f"Your OTP is: {otp}")
+                send_email(
+                    username,
+                    f"Your OTP for election #{election_id}: {election_title}",
+                    f"Election #{election_id}: {election_title}\n OTP: {otp}",
+                )
