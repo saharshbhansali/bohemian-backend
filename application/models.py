@@ -47,7 +47,7 @@ class Candidate(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     election_id = Column(Integer, ForeignKey("elections.id"))
-    votes = Column(Integer, default=0, nullable=False)
+    votes = Column(Float, default=0, nullable=False)
     election = relationship("Election", back_populates="candidates")
 
 
