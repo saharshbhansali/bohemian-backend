@@ -1,5 +1,6 @@
 import logging
 import json
+import os
 import ast
 import csv
 import pandas as pd
@@ -116,6 +117,9 @@ def ranked_choice(vote_format, candidates):  # Change parameter to whatever
         df, candidates, f"Round {round_number}", num_candidates
     )
 
+    if os.path.exists("votes.csv"):
+        os.remove("votes.csv")
+
     # Print the winner
     # print(f"Ranked Choice Voting:\nWinner: {rcv_winner}")
     return rcv_winner
@@ -158,7 +162,10 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
 
     winner = ranked_choice(vote_format, candidate_ids)
     winning_candidate = db.query(Candidate).filter(Candidate.id == winner).first()
-    return {winning_candidate: 1.00}
+    print(
+        f"{winner}\nWinner: {winning_candidate.name}, with ID: {winning_candidate.id}\n {winning_candidate}"
+    )
+    return winner
 
 
 def calculate_score_votes(election_id: int, db: Session):
