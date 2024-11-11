@@ -103,6 +103,7 @@ class ElectionResponse(BaseModel):
 
 
 class ElectionResultsResponse(BaseModel):
+    election_title: str
     voting_system: str = Field(
         ..., pattern="^(traditional|ranked_choice|score_voting|quadratic_voting)$"
     )
@@ -166,13 +167,13 @@ def vote_in_election(
     db: Session = Depends(get_db),
 ):
     validation_token = credentials.credentials
-    # Validate OTP
-    otp_record = (
+    # Validate auth_token
+    auth_token_record = (
         db.query(AuthorizationToken)
         .filter(AuthorizationToken.auth_token == validation_token)
         .first()
     )
-    if otp_record is None:
+    if auth_token_record is None:
         raise HTTPException(status_code=401, detail="Invalid OTP")
 
     election = db.query(Election).filter(Election.id == election_id).first()
@@ -229,7 +230,7 @@ def vote_in_election(
         )
 
     db.commit()
-    db.delete(otp_record)
+    db.delete(auth_token_record)
     db.commit()
     return {"message": "Vote cast successfully"}
 
@@ -273,6 +274,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             ]
             results.sort(key=lambda candidate: candidate.votes, reverse=True)
             return ElectionResultsResponse(
+                election_title=election.title,
                 voting_system=election.voting_system,
                 results=results,
                 winner=CandidateResponse(
@@ -303,6 +305,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
 
     elif election.voting_system == "ranked_choice":
         candidate_votes = calculate_ranked_choice_votes(election_id, db)
+        # print(candidate_votes)
         results = [
             CandidateResponse(
                 id=candidate.id,
@@ -323,6 +326,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
     if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
         tzinfo=datetime_UTC
     ):
+        # print(results)
         # Check for draw
         max_votes = results[0].votes
         top_candidates = [
@@ -330,7 +334,10 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
         ]
         if len(top_candidates) > 1:
             return ElectionResultsResponse(
-                voting_system=election.voting_system, results=results, is_draw=True
+                election_title=election.title,
+                voting_system=election.voting_system,
+                results=results,
+                is_draw=True,
             )
 
         winner = results[0]
@@ -341,11 +348,14 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
         db.add(db_winner)
         db.commit()
         return ElectionResultsResponse(
+            election_title=election.title,
             voting_system=election.voting_system,
             results=results,
             winner=winner,
         )
 
     return ElectionResultsResponse(
-        voting_system=election.voting_system, results=results
+        election_title=election.title,
+        voting_system=election.voting_system,
+        results=results,
     )

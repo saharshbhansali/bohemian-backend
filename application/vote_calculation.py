@@ -1,6 +1,6 @@
 import logging
 import json
-import datetime
+from datetime import datetime, timezone
 import os
 import ast
 import csv
@@ -159,7 +159,7 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
     )
 
     total_votes = float(len(votes))
-    if datetime.datetime.now() < election.end_time:
+    if datetime.now(timezone.utc) < election.end_time.astimezone(timezone.utc):
         candidate_votes = {
             candidate.id: 0.0
             for candidate in db.query(Candidate)
@@ -167,8 +167,11 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
             .all()
         }
 
-        logging.debug(msg=f"{votes}")
-        logging.debug(msg=f"{candidate_votes}")
+        # print(f"{[vote.vote for vote in votes]}")
+        # print(f"{candidate_votes}")
+        # print(
+        #     f"datetime.now: {datetime.now(timezone.utc)}\nend time: {election.end_time}"
+        # )
 
         for vote in votes:
             candidate_votes[int(list(json.loads(vote.vote.decode()).keys())[0])] += 1.0
@@ -185,7 +188,7 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
     print(
         f"{winner}\nWinner: {winning_candidate.name}, with ID: {winning_candidate.id}\n {winning_candidate}"
     )
-    return {f"{winner}": total_votes}
+    return {int(winner): total_votes}
 
 
 def calculate_score_votes(election_id: int, db: Session):
