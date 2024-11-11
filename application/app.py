@@ -167,7 +167,11 @@ def vote_in_election(
 ):
     validation_token = credentials.credentials
     # Validate OTP
-    otp_record = db.query(AuthorizationToken).filter(AuthorizationToken.auth_token == validation_token).first()
+    otp_record = (
+        db.query(AuthorizationToken)
+        .filter(AuthorizationToken.auth_token == validation_token)
+        .first()
+    )
     if otp_record is None:
         raise HTTPException(status_code=401, detail="Invalid OTP")
 
@@ -284,6 +288,11 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
     if election.voting_system == "traditional":
         candidate_votes = calculate_traditional_votes(election_id, db)
     elif election.voting_system == "ranked_choice":
+        # if election.end_time and datetime.now(datetime_UTC) < election.end_time.replace(
+        #     tzinfo=datetime_UTC
+        # ):
+        #     candidate_votes = calculate_traditional_votes(election_id, db)
+        # else:
         candidate_votes = calculate_ranked_choice_votes(election_id, db)
     elif election.voting_system == "score_voting":
         candidate_votes = calculate_score_votes(election_id, db)

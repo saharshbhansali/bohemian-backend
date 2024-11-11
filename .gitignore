@@ -165,6 +165,7 @@ cython_debug/
 app/*.db
 *.db
 identities.csv
+votes.csv
 
 # VSCode settings
 # .vscode/

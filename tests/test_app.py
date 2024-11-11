@@ -27,7 +27,7 @@ Base.metadata.create_all(bind=engine)
 def db():
     Base.metadata.create_all(bind=engine)
     yield TestingSessionLocal()
-    Base.metadata.drop_all(bind=engine)
+    # Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture(scope="module")
@@ -36,7 +36,7 @@ def setup_database():
     Base.metadata.create_all(bind=engine)
     yield
     # Drop tables after tests
-    Base.metadata.drop_all(bind=engine)
+    # Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture(scope="module")
@@ -184,7 +184,7 @@ def get_otp_from_csv(email):
         reader = csv.DictReader(file)
         for row in reader:
             if row["email"] == email:
-                print(f"Found OTP for {email}: {row['otp']}")  # Debug statement
+                # print(f"Found OTP for {email}: {row['otp']}")  # Debug statement
                 return row["otp"]
     print(f"OTP for {email} not found in identities.csv")  # Debug statement
     return None
@@ -197,7 +197,7 @@ def cast_vote(client, email, vote_data, election_id):
         logging.error("OTP not found for %s", email)
         assert False
     auth_token = create_auth_token(email, otp)
-    logging.debug(f"Hashed OTP for {email}: {auth_token}")  # Debug statement
+    logging.debug(f"Auth token: {auth_token}")
 
     # Cast vote
     response = client.post(
@@ -205,6 +205,10 @@ def cast_vote(client, email, vote_data, election_id):
         headers={"Authorization": f"Bearer {auth_token}"},
         json=vote_data,
     )
+
+    logging.debug(response)
+    logging.debug(response.status_code)
+    logging.debug(response.json())
 
     assert response.status_code == 200
     assert response.json() == {"message": "Vote cast successfully"}
@@ -222,7 +226,7 @@ def test_vote_in_election(client, election_data, email, vote_index):
     election_ids, election_responses = election_data
     election_id = election_ids["traditional"]
     candidates = election_responses["traditional"]["candidates"]
-    logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
+    # logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
 
     vote_data = {"vote": candidates[vote_index]["id"]}
     cast_vote(client, email, vote_data, election_id)
@@ -233,7 +237,7 @@ def test_get_election_results(mock_datetime, client, election_data):
     election_ids, election_responses = election_data
     election_id = election_ids["traditional_result"]
     candidates = election_responses["traditional_result"]["candidates"]
-    logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
+    # logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
 
     vote_data = [
         ("trad_res_user1@example.com", 0),
@@ -272,7 +276,7 @@ def test_get_election_results(mock_datetime, client, election_data):
 @patch("application.app.datetime")
 def test_get_election_results_draw(mock_datetime, client, election_data):
     election_ids, election_responses = election_data
-    logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
+    # logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
     election_id = election_ids["traditional_draw"]
     candidates = election_responses["traditional_draw"]["candidates"]
 
@@ -319,7 +323,7 @@ def test_vote_in_ranked_choice_election(client, election_data, email, vote_indic
     election_ids, election_responses = election_data
     election_id = election_ids["ranked_choice"]
     candidates = election_responses["ranked_choice"]["candidates"]
-    logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
+    # logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
 
     vote_data = {
         str(candidates[i]["id"]): rank + 1
@@ -329,13 +333,12 @@ def test_vote_in_ranked_choice_election(client, election_data, email, vote_indic
     cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
 
 
-@pytest.mark.skip(reason="Score voting not implemented")
 @patch("application.app.datetime")
-def test_get_ranked_choice_election_results(mock_datetime, client):
+def test_get_ranked_choice_election_results(mock_datetime, client, election_data):
     election_ids, election_responses = election_data
     election_id = election_ids["ranked_choice_result"]
     candidates = election_responses["ranked_choice_result"]["candidates"]
-    logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
+    # logging.debug("Election variables:\n%s\n%s", election_ids, election_responses)
 
     vote_data = [
         ("rank_res_user1@example.com", [0, 1, 2]),
@@ -343,12 +346,13 @@ def test_get_ranked_choice_election_results(mock_datetime, client):
         ("rank_res_user3@example.com", [2, 0, 1]),
         ("rank_res_user4@example.com", [0, 1, 2]),
         ("rank_res_user5@example.com", [1, 2, 0]),
-        ("rank_res_user6@example.com", [2, 0, 1]),
+        ("rank_res_user6@example.com", [2, 1, 0]),
     ]
     for email, vote_indices in vote_data:
         vote = {
             str(candidates[i]["id"]): rank + 1 for rank, i in enumerate(vote_indices)
         }
+        # print("Cast vote: ", vote)
         cast_vote(client, email, {"vote": json.dumps(vote)}, election_id)
 
     # Mock current time to simulate election expiry
@@ -385,7 +389,7 @@ def test_vote_in_score_voting_election(
     election_ids, election_responses = election_data
     election_id = election_ids[election_type]
     candidates = election_responses[election_type]["candidates"]
-    logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
+    # logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
 
     vote_data = {
         str(candidates[i]["id"]): score + 1
