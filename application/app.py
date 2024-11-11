@@ -268,7 +268,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             .filter(ElectionWinner.election_id == election_id)
             .first()
         )
-        if stored_winner:
+        if stored_winner and stored_winner.winner_id:
             winner_candidate = (
                 db.query(Candidate)
                 .filter(Candidate.id == stored_winner.winner_id)
@@ -278,7 +278,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                 CandidateResponse(
                     id=candidate.id,
                     name=candidate.name,
-                    votes=winner_candidate.votes,
+                    votes=candidate.votes,
                 )
                 for candidate in candidates
             ]
@@ -290,8 +290,25 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                 winner=CandidateResponse(
                     id=winner_candidate.id,
                     name=winner_candidate.name,
-                    votes=winner_candidate.votes,
+                    votes=stored_winner.votes,
                 ),
+            )
+        elif stored_winner and stored_winner.winner_id is None:
+            results = [
+                CandidateResponse(
+                    id=candidate.id,
+                    name=candidate.name,
+                    votes=candidate.votes,
+                )
+                for candidate in candidates
+            ]
+            results.sort(key=lambda candidate: candidate.votes, reverse=True)
+            return ElectionResultsResponse(
+                election_title=election.title,
+                voting_system=election.voting_system,
+                results=results,
+                winner=None,
+                is_draw=True,
             )
         else:
             pass
@@ -299,6 +316,10 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
     # Calculate votes for each candidate
     if election.voting_system == "traditional":
         candidate_votes = calculate_traditional_votes(election_id, db)
+
+        for candidate in candidates:
+            candidate.votes = candidate_votes[candidate.id]
+        db.commit()
 
         # Create response with vote counts
         results = [
@@ -316,6 +337,11 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
     elif election.voting_system == "ranked_choice":
         candidate_votes = calculate_ranked_choice_votes(election_id, db)
         # print(candidate_votes)
+
+        for candidate in candidates:
+            candidate.votes = candidate_votes[candidate.id]
+        db.commit()
+
         results = [
             CandidateResponse(
                 id=candidate.id,
@@ -343,6 +369,12 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             candidate for candidate in results if candidate.votes == max_votes
         ]
         if len(top_candidates) > 1:
+            db_draw = ElectionWinner(
+                election_id=election.id, winner_id=None, votes=max_votes
+            )
+            db.add(db_draw)
+            db.commit()
+
             return ElectionResultsResponse(
                 election_title=election.title,
                 voting_system=election.voting_system,
