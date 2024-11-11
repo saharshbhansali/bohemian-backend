@@ -166,6 +166,7 @@ app/*.db
 *.db
 identities.csv
 votes.csv
+volumes/*
 
 # VSCode settings
 # .vscode/
