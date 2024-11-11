@@ -287,30 +287,37 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
     # Calculate votes for each candidate
     if election.voting_system == "traditional":
         candidate_votes = calculate_traditional_votes(election_id, db)
+
+        # Create response with vote counts
+        results = [
+            CandidateResponse(
+                id=candidate.id,
+                name=candidate.name,
+                votes=candidate_votes[candidate.id],
+            )
+            for candidate in candidates
+        ]
+
+        # Sort candidates by votes in descending order
+        results.sort(key=lambda candidate: candidate.votes, reverse=True)
+
     elif election.voting_system == "ranked_choice":
-        # if election.end_time and datetime.now(datetime_UTC) < election.end_time.replace(
-        #     tzinfo=datetime_UTC
-        # ):
-        #     candidate_votes = calculate_traditional_votes(election_id, db)
-        # else:
-        candidate_votes = calculate_ranked_choice_votes(election_id, db)
+        winning_candidate_id = calculate_ranked_choice_votes(election_id, db)
+        results = [
+            CandidateResponse(
+                id=candidate.id,
+                name=candidate.name,
+                votes=1,
+            )
+            for candidate in candidates
+            if candidate.id == winning_candidate_id
+        ]
     elif election.voting_system == "score_voting":
         candidate_votes = calculate_score_votes(election_id, db)
     elif election.voting_system == "quadratic_voting":
         candidate_votes = calculate_quadratic_votes(election_id, db)
     else:
         raise HTTPException(status_code=400, detail="Invalid voting system")
-
-    # Create response with vote counts
-    results = [
-        CandidateResponse(
-            id=candidate.id, name=candidate.name, votes=candidate_votes[candidate.id]
-        )
-        for candidate in candidates
-    ]
-
-    # Sort candidates by votes in descending order
-    results.sort(key=lambda candidate: candidate.votes, reverse=True)
 
     # Check if the election has expired
     if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(

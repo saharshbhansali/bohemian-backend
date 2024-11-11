@@ -124,7 +124,8 @@ def election_data(client):
             "voting_system": "ranked_choice",
             "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
             "candidates": [
-                {"name": name} for name in ["Candidate 1", "Candidate 2", "Candidate 3"]
+                {"name": name}
+                for name in ["Candidate 1", "Candidate 2", "Candidate 3", "Candidate 4"]
             ],
             "voter_emails": [
                 "rank_res_user1@example.com",
@@ -341,12 +342,12 @@ def test_get_ranked_choice_election_results(mock_datetime, client, election_data
     # logging.debug("Election variables:\n%s\n%s", election_ids, election_responses)
 
     vote_data = [
-        ("rank_res_user1@example.com", [0, 1, 2]),
-        ("rank_res_user2@example.com", [1, 2, 0]),
-        ("rank_res_user3@example.com", [2, 0, 1]),
-        ("rank_res_user4@example.com", [0, 1, 2]),
-        ("rank_res_user5@example.com", [1, 2, 0]),
-        ("rank_res_user6@example.com", [2, 1, 0]),
+        ("rank_res_user1@example.com", [0, 1, 2, 3]),
+        ("rank_res_user2@example.com", [1, 2, 0, 3]),
+        ("rank_res_user3@example.com", [2, 0, 1, 3]),
+        ("rank_res_user4@example.com", [0, 2, 1, 3]),
+        ("rank_res_user5@example.com", [1, 0, 2, 3]),
+        ("rank_res_user6@example.com", [2, 1, 0, 3]),
     ]
     for email, vote_indices in vote_data:
         vote = {
@@ -369,6 +370,7 @@ def test_get_ranked_choice_election_results(mock_datetime, client, election_data
     assert data["voting_system"] == "ranked_choice"
     assert data["is_draw"] is False
     expected_winner = candidates[1]  # Adjust index based on expected winner
+    assert len(data["results"]) == 1
     assert data["winner"]["name"] == expected_winner["name"]
 
 
