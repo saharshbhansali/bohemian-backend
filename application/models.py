@@ -66,8 +66,8 @@ class AlternativeVote(Base):
     id = Column(Integer, primary_key=True, index=True)
     validation_token = Column(String, index=True, nullable=False)
     election_id = Column(Integer, ForeignKey("elections.id"))
-    vote_string = Column(String, index=True, default="")
-    vote = Column(BLOB, index=True)
+    vote_string = Column(String, index=True, default="{}")
+    vote = Column(BLOB, index=True, default=b"{}")
     election = relationship("Election")
 
 

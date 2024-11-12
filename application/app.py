@@ -318,7 +318,8 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
         candidate_votes = calculate_traditional_votes(election_id, db)
 
         for candidate in candidates:
-            candidate.votes = candidate_votes[candidate.id]
+            if candidate.id in candidate_votes:
+                candidate.votes = candidate_votes[candidate.id]
         db.commit()
 
         # Create response with vote counts
@@ -336,10 +337,13 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
 
     elif election.voting_system == "ranked_choice":
         candidate_votes = calculate_ranked_choice_votes(election_id, db)
-        # print(candidate_votes)
-
+        print("candidate votes", candidate_votes)
+        logging.debug(f"Candidate votes: {candidate_votes}")
         for candidate in candidates:
-            candidate.votes = candidate_votes[candidate.id]
+            if candidate.id in candidate_votes:
+                candidate.votes = candidate_votes[candidate.id]
+            else:
+                candidate.votes = 0.0
         db.commit()
 
         results = [
