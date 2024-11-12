@@ -376,11 +376,24 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             election_id, db
         )
     else:
-        candidate_votes = calculate_ranked_choice_votes(
-            election_id, db, traditional=True
-        )
+
+        if election.voting_system == "traditional":
+            candidate_votes = calculate_traditional_votes(election_id, db)
+        elif election.voting_system == "ranked_choice":
+            candidate_votes = calculate_ranked_choice_votes(
+                election_id, db, traditional=True
+            )
+        elif election.voting_system == "score_voting":
+            candidate_votes = calculate_score_votes(election_id, db)
+        elif election.voting_system == "quadratic_voting":
+            candidate_votes = calculate_quadratic_votes(election_id, db)
+        else:
+            HTTPException(
+                status_code=404, detail="Invalid voting system for this election"
+            )
+
         print(
-            f"Traditional Votes for alt systems while the election is going on: {candidate_votes}"
+            f"Traditional Votes for systems while the election is going on: {candidate_votes}"
         )
         for candidate in candidates:
             if candidate.id not in candidate_votes:
