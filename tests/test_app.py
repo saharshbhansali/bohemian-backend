@@ -292,7 +292,7 @@ def test_get_election_results(
     assert len(data["results"]) == 2
     assert data["results"][0]["name"] == "Candidate 1"
     assert data["results"][1]["name"] == "Candidate 2"
-    assert data["winner"][0]["name"] == "Candidate 1"
+    assert data["winner"]["name"] == "Candidate 1"
 
 
 @patch("application.app.datetime")
@@ -400,8 +400,8 @@ def test_get_ranked_choice_election_results(
     assert data["is_draw"] is False
     expected_winner = candidates[1]  # Adjust index based on expected winner
     assert len(data["results"]) == 4
-    assert data["winner"][0]["name"] == expected_winner["name"]
-    assert data["winner"][0]["votes"] == 6.0
+    assert data["winner"]["name"] == expected_winner["name"]
+    assert data["winner"]["votes"] == 6.0
 
 
 @pytest.mark.skip("Vote calculation logic does not account for draws.")
