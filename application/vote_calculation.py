@@ -16,9 +16,6 @@ def ranked_choice(vote_format, candidates):  # Change parameter to whatever
 
     print(f"Vote format: {vote_format}")
     print(f"Candidates: {candidates}")
-
-    print(f"Vote format: {vote_format}")
-    print(f"Candidates: {candidates}")
     vote_list = []
     for i in range(len(vote_format)):
         try:

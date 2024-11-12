@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, constr
-from typing import List, Dict, Optional
+from typing import List, Tuple, Optional
 from .models import (
     Election,
     Candidate,
@@ -108,7 +108,7 @@ class ElectionResultsResponse(BaseModel):
         ..., pattern="^(traditional|ranked_choice|score_voting|quadratic_voting)$"
     )
     results: List[CandidateResponse] | None = None
-    winner: List[CandidateResponse] | None = None
+    winner: CandidateResponse | None = None
     is_draw: bool = False
 
 
@@ -251,7 +251,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
 
     def candidate_votes_winner_calculate(
         election_id: int, db: Session
-    ) -> List[Optional[List[CandidateResponse]]]:
+    ) -> Tuple[List[CandidateResponse], Optional[CandidateResponse]]:
 
         # election = db.query(Election).filter(Election.id == election_id).first()
         # if not election:
@@ -273,7 +273,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
 
         # Check if the election has a stored winner
         if stored_winner:
-            candidate_votes = [
+            stored_candidate_votes_response = [
                 CandidateResponse(
                     id=candidate.id, name=candidate.name, votes=candidate.votes
                 )
@@ -281,20 +281,18 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             ]
 
             if stored_winner.winner_id:
-                winner = [
-                    CandidateResponse(
-                        id=stored_winner.winner_id,
-                        name=stored_winner.winner.name,
-                        votes=stored_winner.votes,
-                    )
-                ]
+                winner_response = CandidateResponse(
+                    id=stored_winner.winner_id,
+                    name=stored_winner.winner.name,
+                    votes=stored_winner.votes,
+                )
 
             else:
-                winner = [
-                    CandidateResponse(id=None, name=None, votes=stored_winner.votes)
-                ]
+                winner_response = CandidateResponse(
+                    id=None, name=None, votes=stored_winner.votes
+                )
 
-            return [candidate_votes, winner]
+            return stored_candidate_votes_response, winner_response
 
         else:
             candidate_votes = {}
@@ -320,35 +318,27 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                     candidate.votes = candidate_votes[candidate.id]
 
             winner = max(candidates, key=lambda x: x.votes)
-            winner_ids = {
-                candidate.id: [candidate.name, candidate.votes]
+            other_winners = {
+                candidate.id: candidate
                 for candidate in candidates
                 if candidate.votes == winner.votes
             }
-            if len(winner_ids) > 1:
+            if len(other_winners) > 1:
                 db_winner = ElectionWinner(
                     election_id=election_id,
                     winner_id=None,
                     votes=winner.votes,
                 )
+                winner_response = None
 
-                return [
-                    [
-                        CandidateResponse(
-                            id=candidate.id,
-                            name=candidate.name,
-                            votes=candidate.votes,
-                        )
-                        for candidate in candidates
-                    ],
-                    None,
-                ]
-
-            elif len(winner_ids) == 1:
+            elif len(other_winners) == 1:
                 db_winner = ElectionWinner(
                     election_id=election_id,
                     winner_id=winner.id,
                     votes=winner.votes,
+                )
+                winner_response = CandidateResponse(
+                    id=winner.id, name=winner.name, votes=winner.votes
                 )
             else:
                 db_winner = None
@@ -364,14 +354,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                 )
                 for candidate in candidates
             ],
-            [
-                CandidateResponse(
-                    id=winner_id,
-                    name=winner_ids[winner_id][0],
-                    votes=winner_ids[winner_id][1],
-                )
-                for winner_id in winner_ids
-            ],
+            winner_response,
         ]
 
     election = db.query(Election).filter(Election.id == election_id).first()
@@ -385,11 +368,13 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
         )
 
     # Check if the election has expired and calculate the winner
-    candidate_responses, winners = None, None
+    candidate_responses, winner_response = None, None
     if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
         tzinfo=datetime_UTC
     ):
-        candidate_responses, winners = candidate_votes_winner_calculate(election_id, db)
+        candidate_responses, winner_response = candidate_votes_winner_calculate(
+            election_id, db
+        )
     else:
         candidate_votes = calculate_ranked_choice_votes(
             election_id, db, traditional=True
@@ -416,7 +401,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             status_code=404, detail="No results found for this election"
         )
 
-    if not winners:
+    if not winner_response:
         return ElectionResultsResponse(
             election_title=election.title,
             voting_system=election.voting_system,
@@ -429,5 +414,5 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             election_title=election.title,
             voting_system=election.voting_system,
             results=candidate_responses,
-            winner=winners,
+            winner=winner_response,
         )
