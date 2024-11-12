@@ -332,6 +332,18 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                     votes=winner.votes,
                 )
 
+                return [
+                    [
+                        CandidateResponse(
+                            id=candidate.id,
+                            name=candidate.name,
+                            votes=candidate.votes,
+                        )
+                        for candidate in candidates
+                    ],
+                    None,
+                ]
+
             elif len(winner_ids) == 1:
                 db_winner = ElectionWinner(
                     election_id=election_id,
@@ -404,12 +416,12 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             status_code=404, detail="No results found for this election"
         )
 
-    if winners and winners[0].id is None and winners[0].name == "Draw":
+    if not winners:
         return ElectionResultsResponse(
             election_title=election.title,
             voting_system=election.voting_system,
             results=candidate_responses,
-            winner=winners[0],
+            winner=None,
             is_draw=True,
         )
     else:
