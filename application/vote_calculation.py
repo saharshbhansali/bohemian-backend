@@ -159,18 +159,18 @@ def calculate_traditional_votes(election_id: int, db: Session):
 
 
 def calculate_ranked_choice_votes(election_id: int, db: Session, traditional=False):
+
+    candidates = db.query(Candidate).filter(Candidate.election_id == election_id).all()
+
+    # Get all candidates and votes
+    votes = (
+        db.query(AlternativeVote)
+        .filter(AlternativeVote.election_id == election_id)
+        .all()
+    )
+
     if traditional:
-        candidate_votes = {
-            candidate.id: 0.0
-            for candidate in db.query(Candidate)
-            .filter(Candidate.election_id == election_id)
-            .all()
-        }
-        votes = (
-            db.query(AlternativeVote)
-            .filter(AlternativeVote.election_id == election_id)
-            .all()
-        )
+        candidate_votes = {candidate.id: 0.0 for candidate in candidates}
         for vote in votes:
             print(f"Trad Vote in calc_rcv_votes: {vote.vote.decode()}")
             vote = json.loads(vote.vote.decode())
@@ -180,14 +180,6 @@ def calculate_ranked_choice_votes(election_id: int, db: Session, traditional=Fal
         # print(votes)
         # print(candidate_votes)
         return candidate_votes
-
-    # Get all candidates and votes
-    candidates = db.query(Candidate).filter(Candidate.election_id == election_id).all()
-    votes = (
-        db.query(AlternativeVote)
-        .filter(AlternativeVote.election_id == election_id)
-        .all()
-    )
 
     print(f"RCV Calc Votes: {votes}")
 
