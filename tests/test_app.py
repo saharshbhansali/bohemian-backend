@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from application.app import app, get_db
 from application.models import Base, Election, Candidate, AuthorizationToken
 from application.utils import generate_otp, create_auth_token
-from datetime import datetime, timedelta, UTC as datetime_UTC
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 
@@ -74,7 +74,7 @@ def election_data(client):
         "traditional": {
             "title": "Traditional Election",
             "voting_system": "traditional",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "end_time": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
             "candidates": [{"name": name} for name in ["Candidate 1", "Candidate 2"]],
             "voter_emails": [
                 "trad_user1@example.com",
@@ -85,7 +85,7 @@ def election_data(client):
         "traditional_draw": {
             "title": "Traditional Election (Draw)",
             "voting_system": "traditional",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "end_time": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
             "candidates": [{"name": name} for name in ["Candidate 1", "Candidate 2"]],
             "voter_emails": [
                 "draw_user1@example.com",
@@ -95,7 +95,7 @@ def election_data(client):
         "traditional_result": {
             "title": "Traditional Election (Result)",
             "voting_system": "traditional",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "end_time": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
             "candidates": [{"name": name} for name in ["Candidate 1", "Candidate 2"]],
             "voter_emails": [
                 "trad_res_user1@example.com",
@@ -106,7 +106,7 @@ def election_data(client):
         "ranked_choice": {
             "title": "Ranked Choice Election",
             "voting_system": "ranked_choice",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "end_time": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
             "candidates": [
                 {"name": name} for name in ["Candidate 1", "Candidate 2", "Candidate 3"]
             ],
@@ -122,7 +122,7 @@ def election_data(client):
         "ranked_choice_result": {
             "title": "Ranked Choice Election (Result)",
             "voting_system": "ranked_choice",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "end_time": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
             "candidates": [
                 {"name": name}
                 for name in ["Candidate 1", "Candidate 2", "Candidate 3", "Candidate 4"]
@@ -139,7 +139,7 @@ def election_data(client):
         "ranked_choice_draw": {
             "title": "Ranked Choice Election (Draw)",
             "voting_system": "ranked_choice",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "end_time": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
             "candidates": [
                 {"name": name}
                 for name in ["Candidate 1", "Candidate 2", "Candidate 3", "Candidate 4"]
@@ -156,7 +156,7 @@ def election_data(client):
         "score_voting": {
             "title": "Score Election",
             "voting_system": "score_voting",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "end_time": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
             "candidates": [
                 {"name": name} for name in ["Candidate 1", "Candidate 2", "Candidate 3"]
             ],
@@ -172,7 +172,7 @@ def election_data(client):
         "quadratic_voting": {
             "title": "Quadratic Election",
             "voting_system": "quadratic_voting",
-            "end_time": (datetime.now(datetime_UTC) + timedelta(days=1)).isoformat(),
+            "end_time": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
             "candidates": [
                 {"name": name} for name in ["Candidate 1", "Candidate 2", "Candidate 3"]
             ],
@@ -250,11 +250,9 @@ def test_vote_in_election(client, election_data, email, vote_index):
     cast_vote(client, email, vote_data, election_id)
 
 
-@patch("application.app.datetime")
-@patch("application.vote_calculation.datetime")
-def test_get_election_results(
-    mock_app_datetime, mock_vote_datetime, client, election_data
-):
+# @patch("application.app.datetime.datetime")
+# def test_get_election_results(mock_app_datetime, client, election_data):
+def test_get_election_results(client, election_data):
     election_ids, election_responses = election_data
     election_id = election_ids["traditional_result"]
     candidates = election_responses["traditional_result"]["candidates"]
@@ -272,34 +270,31 @@ def test_get_election_results(
             {"vote": candidates[vote_index]["id"]},
             election_id,
         )
-
     # Mock current time to simulate election expiry
-    mock_app_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
-    mock_vote_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
+    with patch("application.app.datetime") as mock_app_datetime:
+        mock_app_datetime.now.return_value = datetime.now(timezone.utc) + timedelta(
+            days=2
+        )
 
-    response = client.get(f"/elections/{election_id}/results")
-    assert response.status_code == 200
-    data = response.json()
-    print(data)
-    print(data["results"])
-    print(data["winner"])
+        response = client.get(f"/elections/{election_id}/results")
+        assert response.status_code == 200
+        data = response.json()
+        print(data)
+        print(data["results"])
+        print(data["winner"])
 
-    assert "results" in data
-    assert "is_draw" in data
-    assert "voting_system" in data
-    assert data["voting_system"] == "traditional"
-    assert data["is_draw"] is False
-    assert len(data["results"]) == 2
-    assert data["results"][0]["name"] == "Candidate 1"
-    assert data["results"][1]["name"] == "Candidate 2"
-    assert data["winner"]["name"] == "Candidate 1"
+        assert "results" in data
+        assert "is_draw" in data
+        assert "voting_system" in data
+        assert data["voting_system"] == "traditional"
+        assert data["is_draw"] is False
+        assert len(data["results"]) == 2
+        assert data["results"][0]["name"] == "Candidate 1"
+        assert data["results"][1]["name"] == "Candidate 2"
+        assert data["winner"]["name"] == "Candidate 1"
 
 
-@patch("application.app.datetime")
-@patch("application.vote_calculation.datetime")
-def test_get_election_results_draw(
-    mock_app_datetime, mock_vote_datetime, client, election_data
-):
+def test_get_election_results_draw(client, election_data):
     election_ids, election_responses = election_data
     # logging.error("Election variables:\n%s\n%s", election_ids, election_responses)
     election_id = election_ids["traditional_draw"]
@@ -318,20 +313,28 @@ def test_get_election_results_draw(
         )
 
     # Mock current time to simulate election expiry
-    mock_app_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
-    mock_vote_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
+    with patch("application.app.datetime") as mock_app_datetime:
+        mock_app_datetime.now.return_value = datetime.now(timezone.utc) + timedelta(
+            days=2
+        )
 
-    response = client.get(f"/elections/{election_id}/results")
-    assert response.status_code == 200
-    data = response.json()
-    assert "results" in data
-    assert "is_draw" in data
-    assert "voting_system" in data
-    assert data["voting_system"] == "traditional"
-    assert data["is_draw"] is True
-    assert len(data["results"]) == 2
-    assert data["results"][0]["name"] == "Candidate 1"
-    assert data["results"][1]["name"] == "Candidate 2"
+        response = client.get(f"/elections/{election_id}/results")
+
+        print(response)
+
+        assert response.status_code == 200
+        data = response.json()
+
+        print(data)
+
+        assert "results" in data
+        assert "is_draw" in data
+        assert "voting_system" in data
+        assert data["voting_system"] == "traditional"
+        assert data["is_draw"] is True
+        assert len(data["results"]) == 2
+        assert data["results"][0]["name"] == "Candidate 1"
+        assert data["results"][1]["name"] == "Candidate 2"
 
 
 @pytest.mark.parametrize(
@@ -359,11 +362,7 @@ def test_vote_in_ranked_choice_election(client, election_data, email, vote_indic
     cast_vote(client, email, {"vote": json.dumps(vote_data)}, election_id)
 
 
-@patch("application.app.datetime")
-@patch("application.vote_calculation.datetime")
-def test_get_ranked_choice_election_results(
-    mock_app_datetime, mock_vote_datetime, client, election_data
-):
+def test_get_ranked_choice_election_results(client, election_data):
     election_ids, election_responses = election_data
     election_id = election_ids["ranked_choice_result"]
     candidates = election_responses["ranked_choice_result"]["candidates"]
@@ -385,30 +384,31 @@ def test_get_ranked_choice_election_results(
         cast_vote(client, email, {"vote": json.dumps(vote)}, election_id)
 
     # Mock current time to simulate election expiry
-    mock_app_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
-    mock_vote_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
+    with patch("application.app.datetime") as mock_app_datetime:
+        mock_app_datetime.now.return_value = datetime.now(timezone.utc) + timedelta(
+            days=2
+        )
 
-    # Get election results
-    response = client.get(f"/elections/{election_id}/results")
-    assert response.status_code == 200
-    data = response.json()
+        # Get election results
+        response = client.get(f"/elections/{election_id}/results")
+        assert response.status_code == 200
+        data = response.json()
 
-    # Verify the results
-    assert "results" in data
-    assert "winner" in data
-    assert data["voting_system"] == "ranked_choice"
-    assert data["is_draw"] is False
-    expected_winner = candidates[1]  # Adjust index based on expected winner
-    assert len(data["results"]) == 4
-    assert data["winner"]["name"] == expected_winner["name"]
-    assert data["winner"]["votes"] == 6.0
+        # Verify the results
+        assert "results" in data
+        assert "winner" in data
+        assert data["voting_system"] == "ranked_choice"
+        assert data["is_draw"] is False
+        expected_winner = candidates[1]  # Adjust index based on expected winner
+        assert len(data["results"]) == 4
+        assert data["winner"]["name"] == expected_winner["name"]
+        assert data["winner"]["votes"] == 6.0
 
 
 @pytest.mark.skip("Vote calculation logic does not account for draws.")
 @patch("application.app.datetime")
-@patch("application.vote_calculation.datetime")
 def test_get_ranked_choice_election_results_draw(
-    mock_app_datetime, mock_vote_datetime, client, election_data
+    mock_app_datetime, client, election_data
 ):
     election_ids, election_responses = election_data
     election_id = election_ids["ranked_choice_draw"]
@@ -431,25 +431,27 @@ def test_get_ranked_choice_election_results_draw(
         cast_vote(client, email, {"vote": json.dumps(vote)}, election_id)
 
     # Mock current time to simulate election expiry
-    mock_app_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
-    mock_vote_datetime.now.return_value = datetime.now(datetime_UTC) + timedelta(days=2)
+    with patch("application.app.datetime.datetime") as mock_app_datetime:
+        mock_app_datetime.now.return_value = datetime.now(timezone.utc) + timedelta(
+            days=2
+        )
 
-    # Get election results
-    response = client.get(f"/elections/{election_id}/results")
-    assert response.status_code == 200
-    data = response.json()
+        # Get election results
+        response = client.get(f"/elections/{election_id}/results")
+        assert response.status_code == 200
+        data = response.json()
 
-    # Verify the results
-    assert "results" in data
-    assert "winner" in data
-    assert data["voting_system"] == "ranked_choice"
-    assert data["is_draw"] is True
-    expected_winner = candidates[1]  # Adjust index based on expected winner
-    assert len(data["results"]) == 4
-    assert data["results"][0]["name"] == "Candidate 1"
-    assert data["results"][1]["name"] == "Candidate 2"
-    assert data["results"][2]["name"] == "Candidate 3"
-    assert data["results"][3]["name"] == "Candidate 4"
+        # Verify the results
+        assert "results" in data
+        assert "winner" in data
+        assert data["voting_system"] == "ranked_choice"
+        assert data["is_draw"] is True
+        expected_winner = candidates[1]  # Adjust index based on expected winner
+        assert len(data["results"]) == 4
+        assert data["results"][0]["name"] == "Candidate 1"
+        assert data["results"][1]["name"] == "Candidate 2"
+        assert data["results"][2]["name"] == "Candidate 3"
+        assert data["results"][3]["name"] == "Candidate 4"
 
 
 @pytest.mark.parametrize(

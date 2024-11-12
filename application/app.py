@@ -21,7 +21,7 @@ from .utils import (
     handle_otp_storage_and_notification,
 )
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from datetime import datetime, UTC as datetime_UTC
+from datetime import datetime, timezone
 from .vote_calculation import (
     calculate_traditional_votes,
     calculate_ranked_choice_votes,
@@ -182,8 +182,8 @@ def vote_in_election(
     if not election:
         raise HTTPException(status_code=404, detail="Election not found")
 
-    if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
-        tzinfo=datetime_UTC
+    if election.end_time and datetime.now(timezone.utc) > election.end_time.replace(
+        tzinfo=timezone.utc
     ):
         raise HTTPException(status_code=400, detail="Election has ended")
 
@@ -350,6 +350,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                 winner_response = CandidateResponse(
                     id=None, name="Draw", votes=winner.votes
                 )
+                draw_flag = True
 
             elif len(other_winners) == 1:
                 db_winner = ElectionWinner(
@@ -380,8 +381,8 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
 
     # Check if the election has expired and calculate the winner
     candidate_responses, winner_response = None, None
-    if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
-        tzinfo=datetime_UTC
+    if election.end_time and datetime.now(timezone.utc) > election.end_time.replace(
+        tzinfo=timezone.utc
     ):
         candidate_responses, winner_response, draw_flag = (
             candidate_votes_winner_calculate(election_id, db)
