@@ -1,6 +1,5 @@
 import logging
 import json
-from datetime import datetime, timezone, UTC as datetime_UTC
 import os
 import ast
 import csv

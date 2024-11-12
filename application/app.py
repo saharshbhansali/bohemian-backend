@@ -21,7 +21,7 @@ from .utils import (
     handle_otp_storage_and_notification,
 )
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from datetime import datetime, UTC as datetime_UTC
+import datetime
 from .vote_calculation import (
     calculate_traditional_votes,
     calculate_ranked_choice_votes,
@@ -91,7 +91,7 @@ class ElectionCreate(BaseModel):
     voting_system: str = Field(
         ..., pattern="^(traditional|ranked_choice|score_voting|quadratic_voting)$"
     )
-    end_time: datetime
+    end_time: datetime.datetime
     candidates: List[CandidateCreate]
     voter_emails: List[str]
 
@@ -182,9 +182,9 @@ def vote_in_election(
     if not election:
         raise HTTPException(status_code=404, detail="Election not found")
 
-    if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
-        tzinfo=datetime_UTC
-    ):
+    if election.end_time and datetime.datetime.now(
+        datetime.timezone.utc
+    ) > election.end_time.replace(tzinfo=datetime.timezone.utc):
         raise HTTPException(status_code=400, detail="Election has ended")
 
     validation_token = credentials.credentials
@@ -379,9 +379,9 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
 
     # Check if the election has expired and calculate the winner
     candidate_responses, winner_response = None, None
-    if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
-        tzinfo=datetime_UTC
-    ):
+    if election.end_time and datetime.datetime.now(
+        datetime.timezone.utc
+    ) > election.end_time.replace(tzinfo=datetime.timezone.utc):
         candidate_responses, winner_response, draw_flag = (
             candidate_votes_winner_calculate(election_id, db)
         )
