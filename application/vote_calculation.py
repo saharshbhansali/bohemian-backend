@@ -162,8 +162,8 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
 
     total_votes = float(len(votes))
 
-    if election.end_time and datetime.now(datetime_UTC) < election.end_time.replace(
-        tzinfo=datetime_UTC
+    if election.end_time and datetime.now(timezone.utc) < election.end_time.astimezone(
+        timezone.utc
     ):
         candidate_votes = {
             candidate.id: 0.0
@@ -179,7 +179,10 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
         # )
 
         for vote in votes:
-            candidate_votes[int(list(json.loads(vote.vote.decode()).keys())[0])] += 1.0
+            print(f"Vote: {vote.vote.decode()}")
+            vote = json.loads(vote.vote.decode())
+            candidate_id = int(min(vote, key=vote.get))
+            candidate_votes[candidate_id] += 1.0
 
         print(f"Traditional Votes: {candidate_votes}")
 
@@ -197,7 +200,7 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
             f"{winner}\nWinner: {winning_candidate.name}, with ID: {winning_candidate.id}\n {winning_candidate}"
         )
         return {int(winner): total_votes}
-    
+
     return {int(candidate.id): candidate.votes for candidate in candidates}
 
 
