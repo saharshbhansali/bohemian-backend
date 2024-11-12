@@ -10,16 +10,28 @@ from .models import Candidate, Vote, AlternativeVote, Election
 
 
 def ranked_choice(vote_format, candidates):  # Change parameter to whatever
+    if not vote_format:
+        print("No votes provided to ranked_choice function.")
+        return None
 
-    logging.debug(f"Vote format: {vote_format}")
-    logging.debug(f"Candidates: {candidates}")
+    print(f"Vote format: {vote_format}")
+    print(f"Candidates: {candidates}")
 
     print(f"Vote format: {vote_format}")
     print(f"Candidates: {candidates}")
     vote_list = []
     for i in range(len(vote_format)):
-        vote_dict = ast.literal_eval(vote_format[i])
-        vote_list.append(dict((v, k) for k, v in vote_dict.items()))
+        try:
+            vote_dict = ast.literal_eval(vote_format[i])
+            vote_list.append(dict((v, k) for k, v in vote_dict.items()))
+        except Exception as e:
+            print(f"Error parsing vote: {vote_format[i]}, error: {e}")
+            continue
+
+    if not vote_list:
+        print("No valid votes parsed.")
+        return None
+
     print(vote_list)
 
     columns = vote_list[0].keys()
@@ -29,7 +41,7 @@ def ranked_choice(vote_format, candidates):  # Change parameter to whatever
 
     # Create vote data (each sublist represents a voter's ranked choices)
     votes = []
-    num_voters = 1000
+    num_voters = len(vote_list)
 
     # Write the data to a CSV file
     with open("votes.csv", "w", newline="") as csvfile:
@@ -160,6 +172,13 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
 
     print(f"RCV Calc Votes: {votes}")
 
+    # return {
+    #     candidate.id: 0.0
+    #     for candidate in db.query(Candidate)
+    #     .filter(Candidate.election_id == election_id)
+    #     .all()
+    # }
+
     total_votes = float(len(votes))
 
     if election.end_time and datetime.now(timezone.utc) < election.end_time.astimezone(
@@ -188,17 +207,19 @@ def calculate_ranked_choice_votes(election_id: int, db: Session):
 
         return candidate_votes
 
-    # print(f"Votes: {votes}")
-
     else:
         vote_format = [vote.vote.decode() for vote in votes]
         candidate_ids = [str(candidate.id) for candidate in candidates]
 
+        print(f"Vote format: {vote_format}")
+
         winner = ranked_choice(vote_format, candidate_ids)
         winning_candidate = db.query(Candidate).filter(Candidate.id == winner).first()
         print(
-            f"{winner}\nWinner: {winning_candidate.name}, with ID: {winning_candidate.id}\n {winning_candidate}"
+            f"{winner}\nWinner: {winning_candidate.name if winning_candidate else None}, with ID: {winning_candidate.id if winning_candidate else None}\n {winning_candidate}"
         )
+        if not winner:
+            return {0: total_votes}
         return {int(winner): total_votes}
 
     return {int(candidate.id): candidate.votes for candidate in candidates}
