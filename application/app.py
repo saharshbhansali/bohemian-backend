@@ -331,6 +331,7 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                     winner_id=None,
                     votes=winner.votes,
                 )
+
             elif len(winner_ids) == 1:
                 db_winner = ElectionWinner(
                     election_id=election_id,
@@ -345,7 +346,12 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                 db.commit()
 
         return [
-            candidate_votes,
+            [
+                CandidateResponse(
+                    id=candidate.id, name=candidate.name, votes=candidate.votes
+                )
+                for candidate in candidates
+            ],
             [
                 CandidateResponse(
                     id=winner_id,
@@ -367,12 +373,18 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
         )
 
     # Check if the election has expired and calculate the winner
+    candidate_responses, winners = None, None
     if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
         tzinfo=datetime_UTC
     ):
         candidate_responses, winners = candidate_votes_winner_calculate(election_id, db)
     else:
-        candidate_votes = calculate_traditional_votes(election_id, db)
+        candidate_votes = calculate_ranked_choice_votes(
+            election_id, db, traditional=True
+        )
+        print(
+            f"Traditional Votes for alt systems while the election is going on: {candidate_votes}"
+        )
         for candidate in candidates:
             if candidate.id not in candidate_votes:
                 candidate_votes[candidate.id] = 0.0
@@ -380,7 +392,9 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                 candidate.votes = candidate_votes[candidate.id]
         candidate_responses = [
             CandidateResponse(
-                id=candidate.id, name=candidate.name, votes=candidate.votes
+                id=candidate.id,
+                name=candidate.name,
+                votes=candidate.votes,
             )
             for candidate in candidates
         ]
