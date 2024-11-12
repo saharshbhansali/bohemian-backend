@@ -403,6 +403,7 @@ def test_get_ranked_choice_election_results(
     assert data["winner"]["name"] == expected_winner["name"]
     assert data["winner"]["votes"] == 6.0
 
+
 @pytest.mark.skip("Vote calculation logic does not account for draws.")
 @patch("application.app.datetime")
 @patch("application.vote_calculation.datetime")
