@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, constr
-from typing import List, Dict
+from typing import List, Dict, Optional
 from .models import (
     Election,
     Candidate,
@@ -81,8 +81,8 @@ class CandidateCreate(BaseModel):
 
 
 class CandidateResponse(BaseModel):
-    id: int
-    name: str
+    id: int | None = None
+    name: str | None = None
     votes: float
 
 
@@ -107,8 +107,8 @@ class ElectionResultsResponse(BaseModel):
     voting_system: str = Field(
         ..., pattern="^(traditional|ranked_choice|score_voting|quadratic_voting)$"
     )
-    results: List[CandidateResponse]
-    winner: CandidateResponse = None
+    results: List[CandidateResponse] | None = None
+    winner: List[CandidateResponse] | None = None
     is_draw: bool = False
 
 
@@ -248,6 +248,114 @@ def vote_in_election(
 # Get election results
 @app.get("/elections/{election_id}/results", response_model=ElectionResultsResponse)
 def get_election_results(election_id: int, db: Session = Depends(get_db)):
+
+    def candidate_votes_winner_calculate(
+        election_id: int, db: Session
+    ) -> List[Optional[List[CandidateResponse]]]:
+
+        # election = db.query(Election).filter(Election.id == election_id).first()
+        # if not election:
+        #     raise HTTPException(status_code=404, detail="Election not found")
+
+        # candidates = (
+        #     db.query(Candidate).filter(Candidate.election_id == election_id).all()
+        # )
+        # if not candidates:
+        #     raise HTTPException(
+        #         status_code=404, detail="No candidates found for this election"
+        #     )
+
+        stored_winner = (
+            db.query(ElectionWinner)
+            .filter(ElectionWinner.election_id == election_id)
+            .first()
+        )
+
+        # Check if the election has a stored winner
+        if stored_winner:
+            candidate_votes = [
+                CandidateResponse(
+                    id=candidate.id, name=candidate.name, votes=candidate.votes
+                )
+                for candidate in candidates
+            ]
+
+            if stored_winner.winner_id:
+                winner = [
+                    CandidateResponse(
+                        id=stored_winner.winner_id,
+                        name=stored_winner.winner.name,
+                        votes=stored_winner.votes,
+                    )
+                ]
+
+            else:
+                winner = [
+                    CandidateResponse(id=None, name=None, votes=stored_winner.votes)
+                ]
+
+            return [candidate_votes, winner]
+
+        else:
+            candidate_votes = {}
+            if election.voting_system == "traditional":
+                candidate_votes = calculate_traditional_votes(election_id, db)
+            elif election.voting_system == "ranked_choice":
+                candidate_votes = calculate_ranked_choice_votes(election_id, db)
+            elif election.voting_system == "score_voting":
+                candidate_votes = calculate_score_votes(election_id, db)
+            elif election.voting_system == "quadratic_voting":
+                candidate_votes = calculate_quadratic_votes(election_id, db)
+            # else:
+            #     return [None, None]
+
+            print(
+                f"Candidate Votes returned from calculate_system_votes: {candidate_votes}"
+            )
+
+            for candidate in candidates:
+                if candidate.id not in candidate_votes:
+                    candidate_votes[candidate.id] = 0.0
+                else:
+                    candidate.votes = candidate_votes[candidate.id]
+
+            winner = max(candidates, key=lambda x: x.votes)
+            winner_ids = {
+                candidate.id: [candidate.name, candidate.votes]
+                for candidate in candidates
+                if candidate.votes == winner.votes
+            }
+            if len(winner_ids) > 1:
+                db_winner = ElectionWinner(
+                    election_id=election_id,
+                    winner_id=None,
+                    votes=winner.votes,
+                )
+            elif len(winner_ids) == 1:
+                db_winner = ElectionWinner(
+                    election_id=election_id,
+                    winner_id=winner.id,
+                    votes=winner.votes,
+                )
+            else:
+                db_winner = None
+
+            if db_winner:
+                db.add(db_winner)
+                db.commit()
+
+        return [
+            candidate_votes,
+            [
+                CandidateResponse(
+                    id=winner_id,
+                    name=winner_ids[winner_id][0],
+                    votes=winner_ids[winner_id][1],
+                )
+                for winner_id in winner_ids
+            ],
+        ]
+
     election = db.query(Election).filter(Election.id == election_id).first()
     if not election:
         raise HTTPException(status_code=404, detail="Election not found")
@@ -258,150 +366,42 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             status_code=404, detail="No candidates found for this election"
         )
 
-    # Check if the election has expired
+    # Check if the election has expired and calculate the winner
     if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
         tzinfo=datetime_UTC
     ):
-        # Check if the winner has already been decided and stored
-        stored_winner = (
-            db.query(ElectionWinner)
-            .filter(ElectionWinner.election_id == election_id)
-            .first()
-        )
-        if stored_winner and stored_winner.winner_id:
-            winner_candidate = (
-                db.query(Candidate)
-                .filter(Candidate.id == stored_winner.winner_id)
-                .first()
-            )
-            results = [
-                CandidateResponse(
-                    id=candidate.id,
-                    name=candidate.name,
-                    votes=candidate.votes,
-                )
-                for candidate in candidates
-            ]
-            results.sort(key=lambda candidate: candidate.votes, reverse=True)
-            return ElectionResultsResponse(
-                election_title=election.title,
-                voting_system=election.voting_system,
-                results=results,
-                winner=CandidateResponse(
-                    id=winner_candidate.id,
-                    name=winner_candidate.name,
-                    votes=stored_winner.votes,
-                ),
-            )
-        elif stored_winner and stored_winner.winner_id is None:
-            results = [
-                CandidateResponse(
-                    id=candidate.id,
-                    name=candidate.name,
-                    votes=candidate.votes,
-                )
-                for candidate in candidates
-            ]
-            results.sort(key=lambda candidate: candidate.votes, reverse=True)
-            return ElectionResultsResponse(
-                election_title=election.title,
-                voting_system=election.voting_system,
-                results=results,
-                winner=None,
-                is_draw=True,
-            )
-        else:
-            pass
-
-    # Calculate votes for each candidate
-    if election.voting_system == "traditional":
-        candidate_votes = calculate_traditional_votes(election_id, db)
-
-        for candidate in candidates:
-            if candidate.id in candidate_votes:
-                candidate.votes = candidate_votes[candidate.id]
-        db.commit()
-
-        # Create response with vote counts
-        results = [
-            CandidateResponse(
-                id=candidate.id,
-                name=candidate.name,
-                votes=candidate_votes[candidate.id],
-            )
-            for candidate in candidates
-        ]
-
-        # Sort candidates by votes in descending order
-        results.sort(key=lambda candidate: candidate.votes, reverse=True)
-
-    elif election.voting_system == "ranked_choice":
-        candidate_votes = calculate_ranked_choice_votes(election_id, db)
-        print("candidate votes", candidate_votes)
-        logging.debug(f"Candidate votes: {candidate_votes}")
-        for candidate in candidates:
-            if candidate.id in candidate_votes:
-                candidate.votes = candidate_votes[candidate.id]
-            else:
-                candidate.votes = 0.0
-        db.commit()
-
-        results = [
-            CandidateResponse(
-                id=candidate.id,
-                name=candidate.name,
-                votes=candidate_votes[candidate.id],
-            )
-            for candidate in candidates
-            if candidate.id in candidate_votes.keys()
-        ]
-    elif election.voting_system == "score_voting":
-        candidate_votes = calculate_score_votes(election_id, db)
-    elif election.voting_system == "quadratic_voting":
-        candidate_votes = calculate_quadratic_votes(election_id, db)
+        candidate_responses, winners = candidate_votes_winner_calculate(election_id, db)
     else:
-        raise HTTPException(status_code=400, detail="Invalid voting system")
-
-    # Check if the election has expired
-    if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
-        tzinfo=datetime_UTC
-    ):
-        # print(results)
-        # Check for draw
-        max_votes = results[0].votes
-        top_candidates = [
-            candidate for candidate in results if candidate.votes == max_votes
+        candidate_votes = calculate_traditional_votes(election_id, db)
+        for candidate in candidates:
+            if candidate.id not in candidate_votes:
+                candidate_votes[candidate.id] = 0.0
+            else:
+                candidate.votes = candidate_votes[candidate.id]
+        candidate_responses = [
+            CandidateResponse(
+                id=candidate.id, name=candidate.name, votes=candidate.votes
+            )
+            for candidate in candidates
         ]
-        if len(top_candidates) > 1:
-            db_draw = ElectionWinner(
-                election_id=election.id, winner_id=None, votes=max_votes
-            )
-            db.add(db_draw)
-            db.commit()
 
-            return ElectionResultsResponse(
-                election_title=election.title,
-                voting_system=election.voting_system,
-                results=results,
-                is_draw=True,
-            )
-
-        winner = results[0]
-        # Store the winner in the ElectionWinner table
-        db_winner = ElectionWinner(
-            election_id=election.id, winner_id=winner.id, votes=winner.votes
+    if not candidate_responses:
+        raise HTTPException(
+            status_code=404, detail="No results found for this election"
         )
-        db.add(db_winner)
-        db.commit()
+
+    if winners and winners[0].id is None and winners[0].name == "Draw":
         return ElectionResultsResponse(
             election_title=election.title,
             voting_system=election.voting_system,
-            results=results,
-            winner=winner,
+            results=candidate_responses,
+            winner=winners[0],
+            is_draw=True,
         )
-
-    return ElectionResultsResponse(
-        election_title=election.title,
-        voting_system=election.voting_system,
-        results=results,
-    )
+    else:
+        return ElectionResultsResponse(
+            election_title=election.title,
+            voting_system=election.voting_system,
+            results=candidate_responses,
+            winner=winners,
+        )
