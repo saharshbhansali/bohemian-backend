@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, constr
-from typing import List, Tuple, Optional
+from typing import List, Dict, Tuple, Optional
 from .models import (
     Election,
     Candidate,
@@ -112,6 +112,11 @@ class ElectionResultsResponse(BaseModel):
     is_draw: bool = False
 
 
+class VotesResponse(BaseModel):
+    election_id: int
+    votes: Dict[str, str] | Dict[str, int]
+
+
 security = HTTPBearer()
 
 SEND_EMAILS = False  # Set to True to enable email sending
@@ -173,6 +178,15 @@ def vote_in_election(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
+    election = db.query(Election).filter(Election.id == election_id).first()
+    if not election:
+        raise HTTPException(status_code=404, detail="Election not found")
+
+    if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
+        tzinfo=datetime_UTC
+    ):
+        raise HTTPException(status_code=400, detail="Election has ended")
+
     validation_token = credentials.credentials
     # Validate auth_token
     auth_token_record = (
@@ -185,8 +199,6 @@ def vote_in_election(
     )
     if auth_token_record is None:
         raise HTTPException(status_code=401, detail="Invalid OTP")
-
-    election = db.query(Election).filter(Election.id == election_id).first()
 
     if election.voting_system == "traditional" and type(vote.vote) == type(0):
         # Traditional voting logic
@@ -249,21 +261,21 @@ def vote_in_election(
 @app.get("/elections/{election_id}/results", response_model=ElectionResultsResponse)
 def get_election_results(election_id: int, db: Session = Depends(get_db)):
 
+    election = db.query(Election).filter(Election.id == election_id).first()
+    if not election:
+        raise HTTPException(status_code=404, detail="Election not found")
+
+    candidates = db.query(Candidate).filter(Candidate.election_id == election_id).all()
+    if not candidates:
+        raise HTTPException(
+            status_code=404, detail="No candidates found for this election"
+        )
+
     def candidate_votes_winner_calculate(
         election_id: int, db: Session
-    ) -> Tuple[List[CandidateResponse], Optional[CandidateResponse]]:
+    ) -> Tuple[List[CandidateResponse], Optional[CandidateResponse], bool]:
 
-        # election = db.query(Election).filter(Election.id == election_id).first()
-        # if not election:
-        #     raise HTTPException(status_code=404, detail="Election not found")
-
-        # candidates = (
-        #     db.query(Candidate).filter(Candidate.election_id == election_id).all()
-        # )
-        # if not candidates:
-        #     raise HTTPException(
-        #         status_code=404, detail="No candidates found for this election"
-        #     )
+        draw_flag = False
 
         stored_winner = (
             db.query(ElectionWinner)
@@ -287,12 +299,15 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                     votes=stored_winner.votes,
                 )
 
-            else:
+            elif stored_winner.winner_id is None:
                 winner_response = CandidateResponse(
-                    id=None, name=None, votes=stored_winner.votes
+                    id=None, name="Draw", votes=stored_winner.votes
                 )
+                draw_flag = True
+            else:
+                winner_response = None
 
-            return stored_candidate_votes_response, winner_response
+            return stored_candidate_votes_response, winner_response, draw_flag
 
         else:
             candidate_votes = {}
@@ -304,12 +319,14 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                 candidate_votes = calculate_score_votes(election_id, db)
             elif election.voting_system == "quadratic_voting":
                 candidate_votes = calculate_quadratic_votes(election_id, db)
-            # else:
-            #     return [None, None]
+            else:
+                raise HTTPException(
+                    status_code=404, detail="Invalid voting system for this election"
+                )
 
-            print(
-                f"Candidate Votes returned from calculate_system_votes: {candidate_votes}"
-            )
+            # print(
+            #     f"Candidate Votes returned from calculate_system_votes: {candidate_votes}"
+            # )
 
             for candidate in candidates:
                 if candidate.id not in candidate_votes:
@@ -329,7 +346,9 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                     winner_id=None,
                     votes=winner.votes,
                 )
-                winner_response = None
+                winner_response = CandidateResponse(
+                    id=None, name="Draw", votes=winner.votes
+                )
 
             elif len(other_winners) == 1:
                 db_winner = ElectionWinner(
@@ -355,25 +374,16 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                 for candidate in candidates
             ],
             winner_response,
+            draw_flag,
         ]
-
-    election = db.query(Election).filter(Election.id == election_id).first()
-    if not election:
-        raise HTTPException(status_code=404, detail="Election not found")
-
-    candidates = db.query(Candidate).filter(Candidate.election_id == election_id).all()
-    if not candidates:
-        raise HTTPException(
-            status_code=404, detail="No candidates found for this election"
-        )
 
     # Check if the election has expired and calculate the winner
     candidate_responses, winner_response = None, None
     if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
         tzinfo=datetime_UTC
     ):
-        candidate_responses, winner_response = candidate_votes_winner_calculate(
-            election_id, db
+        candidate_responses, winner_response, draw_flag = (
+            candidate_votes_winner_calculate(election_id, db)
         )
     else:
 
@@ -414,18 +424,35 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             status_code=404, detail="No results found for this election"
         )
 
-    if not winner_response:
-        return ElectionResultsResponse(
-            election_title=election.title,
-            voting_system=election.voting_system,
-            results=candidate_responses,
-            winner=None,
-            is_draw=True,
-        )
+    return ElectionResultsResponse(
+        election_title=election.title,
+        voting_system=election.voting_system,
+        results=candidate_responses,
+        winner=winner_response,
+        is_draw=draw_flag,
+    )
+
+
+# Get all votes of that election
+@app.get("/elections/{election_id}/all_votes", response_model=VotesResponse)
+def get_all_votes(election_id: int, db: Session = Depends(get_db)):
+
+    election = db.query(Election).filter(Election.id == election_id).first()
+    if not election:
+        raise HTTPException(status_code=404, detail="Election not found")
+
+    if election.voting_system == "traditional":
+        votes = db.query(Vote).filter(Vote.election_id == election_id).all()
+        votes_list = {vote.validation_token: vote.candidate_id for vote in votes}
+        print(f"Votes List: {votes_list}")
+        return VotesResponse(election_id=election_id, votes=votes_list)
+
     else:
-        return ElectionResultsResponse(
-            election_title=election.title,
-            voting_system=election.voting_system,
-            results=candidate_responses,
-            winner=winner_response,
+        votes = (
+            db.query(AlternativeVote)
+            .filter(AlternativeVote.election_id == election_id)
+            .all()
         )
+        votes_list = {vote.validation_token: vote.vote.decode() for vote in votes}
+        print(f"Votes List: {votes_list}")
+        return VotesResponse(election_id=election_id, votes=votes_list)
