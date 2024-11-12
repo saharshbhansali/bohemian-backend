@@ -173,6 +173,15 @@ def vote_in_election(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
+    election = db.query(Election).filter(Election.id == election_id).first()
+    if not election:
+        raise HTTPException(status_code=404, detail="Election not found")
+
+    if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
+        tzinfor=datetime_UTC
+    ):
+        raise HTTPException(status_code=400, detail="Election has ended")
+
     validation_token = credentials.credentials
     # Validate auth_token
     auth_token_record = (
@@ -185,8 +194,6 @@ def vote_in_election(
     )
     if auth_token_record is None:
         raise HTTPException(status_code=401, detail="Invalid OTP")
-
-    election = db.query(Election).filter(Election.id == election_id).first()
 
     if election.voting_system == "traditional" and type(vote.vote) == type(0):
         # Traditional voting logic
@@ -287,10 +294,12 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                     votes=stored_winner.votes,
                 )
 
-            else:
+            elif stored_winner.winner_id is None:
                 winner_response = CandidateResponse(
-                    id=None, name=None, votes=stored_winner.votes
+                    id=None, name="Draw", votes=stored_winner.votes
                 )
+            else:
+                winner_response = None
 
             return stored_candidate_votes_response, winner_response
 
@@ -329,7 +338,9 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
                     winner_id=None,
                     votes=winner.votes,
                 )
-                winner_response = None
+                winner_response = CandidateResponse(
+                    id=None, name="Draw", votes=winner.votes
+                )
 
             elif len(other_winners) == 1:
                 db_winner = ElectionWinner(
@@ -414,12 +425,18 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
             status_code=404, detail="No results found for this election"
         )
 
-    if not winner_response:
+    election_winner = (
+        db.query(ElectionWinner)
+        .filter(ElectionWinner.election_id == election_id)
+        .first()
+    )
+
+    if election_winner and not election_winner.winner_id:
         return ElectionResultsResponse(
             election_title=election.title,
             voting_system=election.voting_system,
             results=candidate_responses,
-            winner=None,
+            winner=winner_response,
             is_draw=True,
         )
     else:
