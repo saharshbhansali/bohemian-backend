@@ -260,6 +260,7 @@ def vote_in_election(
 # Get election results
 @app.get("/elections/{election_id}/results", response_model=ElectionResultsResponse)
 def get_election_results(election_id: int, db: Session = Depends(get_db)):
+    draw_flag = False
 
     election = db.query(Election).filter(Election.id == election_id).first()
     if not election:
