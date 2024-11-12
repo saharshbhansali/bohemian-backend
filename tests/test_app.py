@@ -199,11 +199,11 @@ def election_data(client):
 
 def get_otp_from_csv(email):
     with open("identities.csv", mode="r") as file:
-        reader = csv.DictReader(file)
+        reader = csv.reader(file)
         for row in reader:
-            if row["email"] == email:
-                # print(f"Found OTP for {email}: {row['otp']}")  # Debug statement
-                return row["otp"]
+            if row[0] == email:
+                # print(f"Found OTP for {email}: {row[1]}")  # Debug statement
+                return row[1]
     print(f"OTP for {email} not found in identities.csv")  # Debug statement
     return None
 
