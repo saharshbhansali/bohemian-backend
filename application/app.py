@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, constr
-from typing import List, Tuple, Optional
+from typing import List, Dict, Tuple, Optional
 from .models import (
     Election,
     Candidate,
@@ -112,6 +112,11 @@ class ElectionResultsResponse(BaseModel):
     is_draw: bool = False
 
 
+class VotesResponse(BaseModel):
+    election_id: int
+    votes: Dict[str, str] | Dict[str, int]
+
+
 security = HTTPBearer()
 
 SEND_EMAILS = False  # Set to True to enable email sending
@@ -178,7 +183,7 @@ def vote_in_election(
         raise HTTPException(status_code=404, detail="Election not found")
 
     if election.end_time and datetime.now(datetime_UTC) > election.end_time.replace(
-        tzinfor=datetime_UTC
+        tzinfo=datetime_UTC
     ):
         raise HTTPException(status_code=400, detail="Election has ended")
 
@@ -426,3 +431,28 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
         winner=winner_response,
         is_draw=draw_flag,
     )
+
+
+# Get all votes of that election
+@app.get("/elections/{election_id}/all_votes", response_model=VotesResponse)
+def get_all_votes(election_id: int, db: Session = Depends(get_db)):
+
+    election = db.query(Election).filter(Election.id == election_id).first()
+    if not election:
+        raise HTTPException(status_code=404, detail="Election not found")
+
+    if election.voting_system == "traditional":
+        votes = db.query(Vote).filter(Vote.election_id == election_id).all()
+        votes_list = {vote.validation_token: vote.candidate_id for vote in votes}
+        print(f"Votes List: {votes_list}")
+        return VotesResponse(election_id=election_id, votes=votes_list)
+
+    else:
+        votes = (
+            db.query(AlternativeVote)
+            .filter(AlternativeVote.election_id == election_id)
+            .all()
+        )
+        votes_list = {vote.validation_token: vote.vote.decode() for vote in votes}
+        print(f"Votes List: {votes_list}")
+        return VotesResponse(election_id=election_id, votes=votes_list)
