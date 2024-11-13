@@ -119,7 +119,7 @@ class VotesResponse(BaseModel):
 
 security = HTTPBearer()
 
-SEND_EMAILS = False  # Set to True to enable email sending
+SEND_EMAILS = True  # Set to True to enable email sending
 WRITE_TO_CSV = True  # Set to True to enable writing to CSV
 
 
